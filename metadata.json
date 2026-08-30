@@ -1,6 +1,10 @@
 {
   "name": "Nuestros Viajes | Parejas en Ruta",
   "description": "App colaborativa para parejas: itinerario por ciudades, gastos compartidos tipo Tricount, sitios con Google Maps, checklists de equipaje y documentos, buzón de notas, cuenta regresiva, galería de fotos y sincronización en tiempo real con modo offline.",
-  "requestFramePermissions": ["geolocation"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -23,6 +23,7 @@ export const MailboxAndGalleryTab: React.FC = () => {
     activePartnerId,
     sendLoveMessage,
     markMessageAsRead,
+    deleteLoveMessage,
     addGalleryMemory,
     toggleHeartMemory,
     deleteGalleryMemory,
@@ -41,8 +42,9 @@ export const MailboxAndGalleryTab: React.FC = () => {
   const [messageContent, setMessageContent] = useState('');
   const [moodEmoji, setMoodEmoji] = useState('❤️');
   const [isSurprise, setIsSurprise] = useState(false);
-  const [revealAt, setRevealAt] = useState(trip.startDate);
+  const [revealAt, setRevealAt] = useState(trip.startDate || new Date().toISOString().split('T')[0]);
   const [photoUrlNote, setPhotoUrlNote] = useState('');
+  const [sentFeedback, setSentFeedback] = useState(false);
 
   // Gallery Form State
   const [isAddPhotoOpen, setIsAddPhotoOpen] = useState(false);
@@ -56,7 +58,10 @@ export const MailboxAndGalleryTab: React.FC = () => {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageContent.trim()) return;
+    if (!messageContent.trim()) {
+      alert('Por favor escribe el contenido de tu carta o nota');
+      return;
+    }
 
     sendLoveMessage({
       fromPartnerId: activePartnerId,
@@ -64,13 +69,28 @@ export const MailboxAndGalleryTab: React.FC = () => {
       message: messageContent.trim(),
       moodEmoji,
       isSurprise,
-      revealAt: isSurprise ? revealAt : undefined,
+      revealAt: isSurprise ? (revealAt || trip.startDate) : undefined,
       photoUrl: photoUrlNote.trim() || undefined,
     });
 
     setMessageContent('');
     setPhotoUrlNote('');
     setIsSurprise(false);
+    setSentFeedback(true);
+    setTimeout(() => setSentFeedback(false), 4000);
+  };
+
+  const handleNoteImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPhotoUrlNote(reader.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleAddMemorySubmit = (e: React.FormEvent) => {
@@ -184,9 +204,11 @@ export const MailboxAndGalleryTab: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {trip.messages.map(msg => {
-                  const sender = msg.fromPartnerId === 'p1' ? p1 : p2;
-                  const receiver = msg.toPartnerId === 'p1' ? p1 : p2;
-                  const isLocked = msg.isSurprise && msg.revealAt && new Date(msg.revealAt) > new Date();
+                  const sender = trip.partners.find(p => p.id === msg.fromPartnerId) || p1;
+                  const receiver = trip.partners.find(p => p.id === msg.toPartnerId) || p2;
+                  const isFutureDate = msg.revealAt && new Date(msg.revealAt) > new Date();
+                  const isLockedForReceiver = msg.isSurprise && isFutureDate && activePartnerId === msg.toPartnerId;
+                  const isSurprisePreviewForSender = msg.isSurprise && isFutureDate && activePartnerId === msg.fromPartnerId;
 
                   return (
                     <div
@@ -214,34 +236,58 @@ export const MailboxAndGalleryTab: React.FC = () => {
                           </div>
                         </div>
 
-                        {!msg.isRead && (
+                        <div className="flex items-center gap-2">
+                          {!msg.isRead && activePartnerId === msg.toPartnerId && !isLockedForReceiver && (
+                            <button
+                              onClick={() => markMessageAsRead(msg.id)}
+                              className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#E9EDC6] text-[#5A5A40] border border-[#DCE4B8] cursor-pointer hover:bg-[#dce4b8] transition-colors"
+                            >
+                              Marcar como leído
+                            </button>
+                          )}
                           <button
-                            onClick={() => markMessageAsRead(msg.id)}
-                            className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#E9EDC6] text-[#5A5A40] border border-[#DCE4B8] cursor-pointer"
+                            onClick={() => {
+                              if (confirm('¿Eliminar esta carta del buzón?')) {
+                                deleteLoveMessage(msg.id);
+                              }
+                            }}
+                            className="p-1 text-[#8C8B79] hover:text-[#D4A373] transition-colors cursor-pointer"
+                            title="Eliminar mensaje"
                           >
-                            Marcar como leído
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        )}
+                        </div>
                       </div>
 
-                      {isLocked ? (
-                        <div className="p-4 bg-[#FBF0E4] rounded-2xl border border-[#F3DEC9] text-center space-y-1">
-                          <Lock className="w-6 h-6 mx-auto text-[#D4A373]" />
-                          <p className="text-xs font-bold text-[#8A5A2B] font-serif">
-                            Mensaje Secreto / Sorpresa 🔒
+                      {isLockedForReceiver ? (
+                        <div className="p-5 bg-[#FBF0E4] rounded-2xl border border-[#F3DEC9] text-center space-y-2">
+                          <div className="w-10 h-10 rounded-full bg-[#F3DEC9] flex items-center justify-center mx-auto text-[#D4A373]">
+                            <Lock className="w-5 h-5" />
+                          </div>
+                          <p className="text-sm font-bold text-[#8A5A2B] font-serif">
+                            💌 Mensaje Secreto de {sender.name} 🔒
                           </p>
-                          <p className="text-[11px] text-[#8A5A2B]">
-                            Se revelará el día <strong>{msg.revealAt}</strong>. ¡No hagas trampa!
+                          <p className="text-xs text-[#8A5A2B]">
+                            Se revelará automáticamente el día <strong>{msg.revealAt}</strong>. ¡Guarda la emoción! ✨
                           </p>
                         </div>
                       ) : (
                         <div className="space-y-3">
+                          {isSurprisePreviewForSender && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FAF6E9] border border-[#EBE3CD] text-[11px] font-medium text-[#5A5A40]">
+                              <Lock className="w-3.5 h-3.5 text-[#D4A373]" />
+                              <span>
+                                <strong>Carta Sorpresa:</strong> Tu pareja la verá el <strong>{msg.revealAt}</strong> (Esta es tu vista previa).
+                              </span>
+                            </div>
+                          )}
+
                           <div className="text-xs text-[#434338] leading-relaxed bg-[#FAF6E9] p-3.5 rounded-2xl border border-[#EBE3CD] whitespace-pre-wrap font-medium">
                             {msg.message}
                           </div>
 
                           {msg.photoUrl && (
-                            <div className="h-40 rounded-2xl overflow-hidden border border-[#E5E0D5]">
+                            <div className="h-44 rounded-2xl overflow-hidden border border-[#E5E0D5]">
                               <img
                                 src={msg.photoUrl}
                                 alt="Foto adjunta"
@@ -272,7 +318,14 @@ export const MailboxAndGalleryTab: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSendMessage} className="space-y-3">
+            {sentFeedback && (
+              <div className="p-3 bg-[#E9EDC6] border border-[#DCE4B8] rounded-2xl text-xs font-bold text-[#5A5A40] flex items-center gap-2 animate-in fade-in">
+                <Sparkles className="w-4 h-4 text-[#5A5A40] shrink-0" />
+                <span>¡Carta guardada y enviada al buzón con éxito! ✨</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSendMessage} noValidate className="space-y-3">
               <div>
                 <label className="block text-[11px] font-bold text-[#737260] uppercase mb-1">
                   Mood / Emoción
@@ -309,15 +362,44 @@ export const MailboxAndGalleryTab: React.FC = () => {
 
               <div>
                 <label className="block text-[11px] font-bold text-[#737260] uppercase mb-1">
-                  URL de Foto Sorpresa (Opcional)
+                  Foto o Postal (Opcional)
                 </label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/..."
-                  value={photoUrlNote}
-                  onChange={e => setPhotoUrlNote(e.target.value)}
-                  className="w-full text-xs p-2.5 rounded-2xl border border-[#D9D1B9] bg-[#FBF9F5]"
-                />
+                <div className="space-y-2">
+                  <label className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-[#D9D1B9] hover:border-[#5A5A40] rounded-xl bg-[#F9F8F4] text-xs font-bold text-[#5A5A40] cursor-pointer transition-colors">
+                    <Camera className="w-3.5 h-3.5 text-[#D4A373]" />
+                    <span>Subir foto desde galería / cámara</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleNoteImageUpload}
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="O pega URL de foto: https://..."
+                    value={photoUrlNote}
+                    onChange={e => setPhotoUrlNote(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-2xl border border-[#D9D1B9] bg-[#FBF9F5]"
+                  />
+                </div>
+
+                {photoUrlNote && (
+                  <div className="relative mt-2 h-24 rounded-2xl overflow-hidden border border-[#D9D1B9]">
+                    <img
+                      src={photoUrlNote}
+                      alt="Vista previa foto carta"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPhotoUrlNote('')}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-black cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Surprise Lock */}

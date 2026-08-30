@@ -79,6 +79,7 @@ interface TripContextType {
   // Mailbox & Notes
   sendLoveMessage: (message: Omit<LoveLetterMessage, 'id' | 'tripId' | 'timestamp' | 'isRead'>) => void;
   markMessageAsRead: (id: string) => void;
+  deleteLoveMessage: (id: string) => void;
 
   // Gallery
   addGalleryMemory: (memory: Omit<GalleryMemory, 'id' | 'tripId' | 'hearts'>) => void;
@@ -845,6 +846,14 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     broadcastTripChange(updated);
   };
 
+  const deleteLoveMessage = (id: string) => {
+    const updated = {
+      ...trip,
+      messages: trip.messages.filter(m => m.id !== id),
+    };
+    broadcastTripChange(updated);
+  };
+
   // Gallery
   const addGalleryMemory = (
     memData: Omit<GalleryMemory, 'id' | 'tripId' | 'hearts'>
@@ -949,6 +958,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteTask,
         sendLoveMessage,
         markMessageAsRead,
+        deleteLoveMessage,
         addGalleryMemory,
         toggleHeartMemory,
         deleteGalleryMemory,
