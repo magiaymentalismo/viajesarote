@@ -96,6 +96,47 @@ const LOCAL_STORAGE_KEY = 'parejas_en_ruta_trip_v2';
 const LOCAL_STORAGE_TRIPS_LIST = 'parejas_en_ruta_trips_list_v2';
 const LOCAL_STORAGE_PARTNER = 'parejas_en_ruta_partner_id';
 
+export const ensureTripIntegrity = (t: Partial<Trip> | null | undefined): Trip => {
+  if (!t) return createEmptyTrip();
+
+  return {
+    id: t.id || 'trip-' + Date.now().toString(36),
+    title: t.title || 'Nuestro Viaje en Pareja',
+    subtitle: t.subtitle || '',
+    coverImage:
+      t.coverImage ||
+      'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=80',
+    startDate: t.startDate || new Date().toISOString().split('T')[0],
+    endDate:
+      t.endDate ||
+      new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    currency: t.currency || 'EUR',
+    partners:
+      t.partners && Array.isArray(t.partners) && t.partners.length === 2
+        ? t.partners
+        : [
+            { id: 'p1', name: 'Viajero 1', avatarEmoji: '🧔', avatarColor: '#5A5A40' },
+            { id: 'p2', name: 'Viajero 2', avatarEmoji: '🌸', avatarColor: '#D4A373' },
+          ],
+    currentActivePartnerId: t.currentActivePartnerId || 'p1',
+    inviteCode: t.inviteCode || 'VIAJE-' + Math.floor(1000 + Math.random() * 9000),
+    createdAt: t.createdAt || new Date().toISOString(),
+    lastSyncedAt: t.lastSyncedAt || new Date().toISOString(),
+    expenses: Array.isArray(t.expenses) ? t.expenses : [],
+    settlements: Array.isArray(t.settlements) ? t.settlements : [],
+    cities: Array.isArray(t.cities) ? t.cities : [],
+    transports: Array.isArray(t.transports) ? t.transports : [],
+    accommodations: Array.isArray(t.accommodations) ? t.accommodations : [],
+    sites: Array.isArray(t.sites) ? t.sites : [],
+    packingList: Array.isArray(t.packingList) ? t.packingList : [],
+    documents: Array.isArray(t.documents) ? t.documents : [],
+    tasks: Array.isArray(t.tasks) ? t.tasks : [],
+    messages: Array.isArray(t.messages) ? t.messages : [],
+    gallery: Array.isArray(t.gallery) ? t.gallery : [],
+    notifications: Array.isArray(t.notifications) ? t.notifications : [],
+  };
+};
+
 const TripContext = createContext<TripContextType | null>(null);
 
 export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -104,12 +145,12 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        return ensureTripIntegrity(JSON.parse(saved));
       }
     } catch {
       // ignore
     }
-    return createEmptyTrip();
+    return ensureTripIntegrity(createEmptyTrip());
   });
 
   const [tripsList, setTripsList] = useState<Trip[]>(() => {
@@ -216,10 +257,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Broadcast change through Local BroadcastChannel + HTTP REST
   const broadcastTripChange = useCallback((updatedTrip: Trip) => {
-    const tripWithTimestamp = {
+    const tripWithTimestamp = ensureTripIntegrity({
       ...updatedTrip,
-      lastSyncedAt: new Date().toISOString()
-    };
+      lastSyncedAt: new Date().toISOString(),
+    });
     setTrip(tripWithTimestamp);
 
     // 1. Sync across browser tabs instantly via BroadcastChannel
@@ -244,7 +285,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, [activePartnerId]);
 
-  // Sync / Poll trip with server (Zero WebSocket requirement - 100% Vercel & Serverless compatible)
+  // Sync / Poll trip with server
   const syncTripWithServer = useCallback(async (tripToSync: Trip, silent = false) => {
     if (!navigator.onLine) return;
     if (!silent) setIsSyncing(true);
@@ -252,13 +293,14 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await fetch(`/api/trips/${encodeURIComponent(tripToSync.id)}`);
       if (res.ok) {
-        const remoteTrip: Trip = await res.json();
-        if (remoteTrip && remoteTrip.id === tripToSync.id) {
+        const remoteTripRaw = await res.json();
+        if (remoteTripRaw && remoteTripRaw.id === tripToSync.id) {
+          const remoteTrip = ensureTripIntegrity(remoteTripRaw);
           const remoteTime = new Date(remoteTrip.lastSyncedAt || 0).getTime();
           const localTime = new Date(currentTripRef.current.lastSyncedAt || 0).getTime();
           
-          // Only update if remote is newer
-          if (remoteTime > localTime) {
+          // Only update if remote is newer or has distinct changes
+          if (remoteTime > localTime || remoteTrip.expenses.length !== currentTripRef.current.expenses.length || remoteTrip.cities.length !== currentTripRef.current.cities.length) {
             setTrip(remoteTrip);
           }
         }
@@ -289,12 +331,12 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
 
-    // Poll every 3.5 seconds when active
+    // Poll every 3 seconds when active
     pollIntervalRef.current = setInterval(() => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
         syncTripWithServer(currentTripRef.current, true);
       }
-    }, 3500);
+    }, 3000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -316,9 +358,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .then(res => res.ok ? res.json() : null)
         .then(remoteTrip => {
           if (remoteTrip && remoteTrip.id) {
-            setTrip(remoteTrip);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(remoteTrip));
+            const sanitized = ensureTripIntegrity(remoteTrip);
+            setTrip(sanitized);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
             localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
             // Clean URL without reloading
             const cleanUrl = window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
@@ -351,11 +395,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!parsed || !parsed.id || !parsed.title) {
         return false;
       }
-      parsed.lastSyncedAt = new Date().toISOString();
-      setTrip(parsed);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+      const sanitized = ensureTripIntegrity(parsed);
+      setTrip(sanitized);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
       localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-      broadcastTripChange(parsed);
+      broadcastTripChange(sanitized);
       return true;
     } catch {
       return false;
@@ -399,10 +443,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       targetTab,
     };
 
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...currentTripRef.current,
       notifications: [newNotif, ...(currentTripRef.current.notifications || [])],
-    };
+    });
     broadcastTripChange(updated);
 
     // Trigger native browser notification
@@ -423,13 +467,17 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const selectTrip = (tripId: string) => {
     const found = tripsList.find(t => t.id === tripId);
     if (found) {
-      setTrip(found);
+      const sanitized = ensureTripIntegrity(found);
+      setTrip(sanitized);
+      broadcastTripChange(sanitized);
     } else {
-      fetch(`/api/trips/${tripId}`)
+      fetch(`/api/trips/${encodeURIComponent(tripId)}`)
         .then(res => res.json())
         .then(data => {
           if (data && data.id) {
-            setTrip(data);
+            const sanitized = ensureTripIntegrity(data);
+            setTrip(sanitized);
+            broadcastTripChange(sanitized);
           }
         })
         .catch(() => {});
@@ -439,7 +487,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createNewTrip = (tripData: Partial<Trip>): Trip => {
     const newId = 'trip-' + Date.now().toString(36);
     const inviteCode = 'VIAJE-' + Math.floor(1000 + Math.random() * 9000);
-    const newTrip: Trip = {
+    const newTrip = ensureTripIntegrity({
       id: newId,
       title: tripData.title || 'Nuestra Próxima Aventura',
       subtitle: tripData.subtitle || 'Viaje en Pareja',
@@ -481,61 +529,101 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
           read: false,
         },
       ],
-    };
+    });
 
     setTripsList(prev => [newTrip, ...prev.filter(t => t.id !== newId)]);
     setTrip(newTrip);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newTrip));
+    localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
     broadcastTripChange(newTrip);
     return newTrip;
   };
 
   const loadDemoTrip = () => {
-    setTrip(demoTripTemplate);
+    const demo = ensureTripIntegrity(demoTripTemplate);
+    setTrip(demo);
     setTripsList(prev => [
-      demoTripTemplate,
-      ...prev.filter(t => t.id !== demoTripTemplate.id),
+      demo,
+      ...prev.filter(t => t.id !== demo.id),
     ]);
-    broadcastTripChange(demoTripTemplate);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(demo));
+    localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+    broadcastTripChange(demo);
   };
 
   const updateTripInfo = (updates: Partial<Trip>) => {
-    const updated = { ...trip, ...updates };
+    const updated = ensureTripIntegrity({ ...trip, ...updates });
     broadcastTripChange(updated);
   };
 
   const joinTripByCode = async (code: string): Promise<boolean> => {
+    const clean = code ? code.trim() : '';
+    if (!clean) return false;
+
+    // 1. Try server fetch
     try {
-      const res = await fetch(`/api/trips/${encodeURIComponent(code.trim())}`);
+      const res = await fetch(`/api/trips/${encodeURIComponent(clean)}`);
       if (res.ok) {
         const foundTrip = await res.json();
-        setTrip(foundTrip);
-        return true;
+        if (foundTrip && foundTrip.id) {
+          const sanitized = ensureTripIntegrity(foundTrip);
+          setTrip(sanitized);
+          setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+          localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+          broadcastTripChange(sanitized);
+          return true;
+        }
       }
     } catch {
       // offline lookup in local list
-      const local = tripsList.find(
-        t => t.inviteCode.toUpperCase() === code.trim().toUpperCase()
-      );
-      if (local) {
-        setTrip(local);
-        return true;
-      }
     }
+
+    // 2. Fallback to local trips list or demo trip
+    const cleanUpper = clean.toUpperCase().replace(/\s+/g, '');
+    const digitsOnly = clean.replace(/\D/g, '');
+
+    const candidates = [...tripsList, trip, demoTripTemplate];
+    const local = candidates.find(t => {
+      if (!t) return false;
+      const tId = (t.id || '').toUpperCase();
+      const tCode = (t.inviteCode || '').toUpperCase().replace(/\s+/g, '');
+      const tDigits = (t.inviteCode || '').replace(/\D/g, '');
+
+      return (
+        tId === cleanUpper ||
+        tCode === cleanUpper ||
+        tCode.replace(/-/g, '') === cleanUpper.replace(/-/g, '') ||
+        (digitsOnly.length >= 3 && tDigits === digitsOnly)
+      );
+    });
+
+    if (local) {
+      const sanitized = ensureTripIntegrity(local);
+      setTrip(sanitized);
+      setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+      localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+      broadcastTripChange(sanitized);
+      return true;
+    }
+
     return false;
   };
 
   // Expenses Actions
   const addExpense = (expenseData: Omit<Expense, 'id' | 'createdAt' | 'tripId'>) => {
+    const existing = Array.isArray(trip.expenses) ? trip.expenses : [];
     const newExpense: Expense = {
       ...expenseData,
       id: 'exp-' + Date.now().toString(36),
       tripId: trip.id,
       createdAt: new Date().toISOString(),
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      expenses: [newExpense, ...trip.expenses],
-    };
+      expenses: [newExpense, ...existing],
+    });
     broadcastTripChange(updated);
 
     const payerName = expenseData.paidById === 'p1' ? trip.partners[0].name : expenseData.paidById === 'p2' ? trip.partners[1].name : 'Ambos';
@@ -548,31 +636,34 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateExpense = (id: string, updates: Partial<Expense>) => {
-    const updated = {
+    const existing = Array.isArray(trip.expenses) ? trip.expenses : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      expenses: trip.expenses.map(e => (e.id === id ? { ...e, ...updates } : e)),
-    };
+      expenses: existing.map(e => (e.id === id ? { ...e, ...updates } : e)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteExpense = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.expenses) ? trip.expenses : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      expenses: trip.expenses.filter(e => e.id !== id),
-    };
+      expenses: existing.filter(e => e.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const addSettlement = (settlementData: Omit<Settlement, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.settlements) ? trip.settlements : [];
     const newSettlement: Settlement = {
       ...settlementData,
       id: 'set-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      settlements: [newSettlement, ...(trip.settlements || [])],
-    };
+      settlements: [newSettlement, ...existing],
+    });
     broadcastTripChange(updated);
 
     const fromName = trip.partners.find(p => p.id === settlementData.fromPartnerId)?.name;
@@ -587,228 +678,254 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Itinerary & Transport
   const addTransport = (transData: Omit<TransportBooking, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.transports) ? trip.transports : [];
     const newTrans: TransportBooking = {
       ...transData,
       id: 'trans-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      transports: [...trip.transports, newTrans],
-    };
+      transports: [...existing, newTrans],
+    });
     broadcastTripChange(updated);
   };
 
   const updateTransport = (id: string, updates: Partial<TransportBooking>) => {
-    const updated = {
+    const existing = Array.isArray(trip.transports) ? trip.transports : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      transports: trip.transports.map(t => (t.id === id ? { ...t, ...updates } : t)),
-    };
+      transports: existing.map(t => (t.id === id ? { ...t, ...updates } : t)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteTransport = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.transports) ? trip.transports : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      transports: trip.transports.filter(t => t.id !== id),
-    };
+      transports: existing.filter(t => t.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const addAccommodation = (accData: Omit<AccommodationBooking, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.accommodations) ? trip.accommodations : [];
     const newAcc: AccommodationBooking = {
       ...accData,
       id: 'acc-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      accommodations: [...trip.accommodations, newAcc],
-    };
+      accommodations: [...existing, newAcc],
+    });
     broadcastTripChange(updated);
   };
 
   const updateAccommodation = (id: string, updates: Partial<AccommodationBooking>) => {
-    const updated = {
+    const existing = Array.isArray(trip.accommodations) ? trip.accommodations : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      accommodations: trip.accommodations.map(a => (a.id === id ? { ...a, ...updates } : a)),
-    };
+      accommodations: existing.map(a => (a.id === id ? { ...a, ...updates } : a)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteAccommodation = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.accommodations) ? trip.accommodations : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      accommodations: trip.accommodations.filter(a => a.id !== id),
-    };
+      accommodations: existing.filter(a => a.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const addCity = (cityData: Omit<DestinationCity, 'id' | 'tripId' | 'order'>) => {
+    const existing = Array.isArray(trip.cities) ? trip.cities : [];
     const newCity: DestinationCity = {
       ...cityData,
       id: 'city-' + Date.now().toString(36),
       tripId: trip.id,
-      order: trip.cities.length + 1,
+      order: existing.length + 1,
+      dayPlans: cityData.dayPlans || [],
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      cities: [...trip.cities, newCity],
-    };
+      cities: [...existing, newCity],
+    });
     broadcastTripChange(updated);
   };
 
   const updateCity = (id: string, updates: Partial<DestinationCity>) => {
-    const updated = {
+    const existing = Array.isArray(trip.cities) ? trip.cities : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      cities: trip.cities.map(c => (c.id === id ? { ...c, ...updates } : c)),
-    };
+      cities: existing.map(c => (c.id === id ? { ...c, ...updates } : c)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteCity = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.cities) ? trip.cities : [];
+    const existingAcc = Array.isArray(trip.accommodations) ? trip.accommodations : [];
+    const existingSites = Array.isArray(trip.sites) ? trip.sites : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      cities: trip.cities.filter(c => c.id !== id),
-      accommodations: trip.accommodations.filter(a => a.cityId !== id),
-      sites: trip.sites.filter(s => s.cityId !== id),
-    };
+      cities: existing.filter(c => c.id !== id),
+      accommodations: existingAcc.filter(a => a.cityId !== id),
+      sites: existingSites.filter(s => s.cityId !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const updateDayPlan = (cityId: string, planId: string, updates: Partial<DestinationCity['dayPlans'][0]>) => {
-    const updated = {
+    const existing = Array.isArray(trip.cities) ? trip.cities : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      cities: trip.cities.map(city => {
+      cities: existing.map(city => {
         if (city.id !== cityId) return city;
+        const plans = Array.isArray(city.dayPlans) ? city.dayPlans : [];
         return {
           ...city,
-          dayPlans: city.dayPlans.map(p => (p.id === planId ? { ...p, ...updates } : p)),
+          dayPlans: plans.map(p => (p.id === planId ? { ...p, ...updates } : p)),
         };
       }),
-    };
+    });
     broadcastTripChange(updated);
   };
 
   // Sites
   const addSite = (siteData: Omit<SiteToVisit, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.sites) ? trip.sites : [];
     const newSite: SiteToVisit = {
       ...siteData,
       id: 'site-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      sites: [newSite, ...trip.sites],
-    };
+      sites: [newSite, ...existing],
+    });
     broadcastTripChange(updated);
   };
 
   const updateSite = (id: string, updates: Partial<SiteToVisit>) => {
-    const updated = {
+    const existing = Array.isArray(trip.sites) ? trip.sites : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      sites: trip.sites.map(s => (s.id === id ? { ...s, ...updates } : s)),
-    };
+      sites: existing.map(s => (s.id === id ? { ...s, ...updates } : s)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteSite = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.sites) ? trip.sites : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      sites: trip.sites.filter(s => s.id !== id),
-    };
+      sites: existing.filter(s => s.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   // Packing & Tasks & Docs
   const togglePackingItem = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.packingList) ? trip.packingList : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      packingList: trip.packingList.map(item =>
+      packingList: existing.map(item =>
         item.id === id ? { ...item, isPacked: !item.isPacked } : item
       ),
-    };
+    });
     broadcastTripChange(updated);
   };
 
   const addPackingItem = (itemData: Omit<PackingItem, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.packingList) ? trip.packingList : [];
     const newItem: PackingItem = {
       ...itemData,
       id: 'pack-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      packingList: [...trip.packingList, newItem],
-    };
+      packingList: [...existing, newItem],
+    });
     broadcastTripChange(updated);
   };
 
   const deletePackingItem = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.packingList) ? trip.packingList : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      packingList: trip.packingList.filter(item => item.id !== id),
-    };
+      packingList: existing.filter(item => item.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const addDocument = (docData: Omit<DocumentItem, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.documents) ? trip.documents : [];
     const newDoc: DocumentItem = {
       ...docData,
       id: 'doc-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      documents: [...trip.documents, newDoc],
-    };
+      documents: [...existing, newDoc],
+    });
     broadcastTripChange(updated);
   };
 
   const updateDocument = (id: string, updates: Partial<DocumentItem>) => {
-    const updated = {
+    const existing = Array.isArray(trip.documents) ? trip.documents : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      documents: trip.documents.map(d => (d.id === id ? { ...d, ...updates } : d)),
-    };
+      documents: existing.map(d => (d.id === id ? { ...d, ...updates } : d)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteDocument = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.documents) ? trip.documents : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      documents: trip.documents.filter(d => d.id !== id),
-    };
+      documents: existing.filter(d => d.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   const toggleTask = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.tasks) ? trip.tasks : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      tasks: trip.tasks.map(task =>
+      tasks: existing.map(task =>
         task.id === id ? { ...task, completed: !task.completed } : task
       ),
-    };
+    });
     broadcastTripChange(updated);
   };
 
   const addTask = (taskData: Omit<PendingTask, 'id' | 'tripId'>) => {
+    const existing = Array.isArray(trip.tasks) ? trip.tasks : [];
     const newTask: PendingTask = {
       ...taskData,
       id: 'task-' + Date.now().toString(36),
       tripId: trip.id,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      tasks: [...trip.tasks, newTask],
-    };
+      tasks: [...existing, newTask],
+    });
     broadcastTripChange(updated);
   };
 
   const deleteTask = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.tasks) ? trip.tasks : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      tasks: trip.tasks.filter(t => t.id !== id),
-    };
+      tasks: existing.filter(t => t.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
@@ -816,6 +933,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sendLoveMessage = (
     msgData: Omit<LoveLetterMessage, 'id' | 'tripId' | 'timestamp' | 'isRead'>
   ) => {
+    const existing = Array.isArray(trip.messages) ? trip.messages : [];
     const newMsg: LoveLetterMessage = {
       ...msgData,
       id: 'msg-' + Date.now().toString(36),
@@ -823,10 +941,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       timestamp: new Date().toISOString(),
       isRead: false,
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      messages: [newMsg, ...trip.messages],
-    };
+      messages: [newMsg, ...existing],
+    });
     broadcastTripChange(updated);
 
     const senderName = trip.partners.find(p => p.id === msgData.fromPartnerId)?.name || 'Tu pareja';
@@ -839,18 +957,20 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const markMessageAsRead = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.messages) ? trip.messages : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      messages: trip.messages.map(m => (m.id === id ? { ...m, isRead: true } : m)),
-    };
+      messages: existing.map(m => (m.id === id ? { ...m, isRead: true } : m)),
+    });
     broadcastTripChange(updated);
   };
 
   const deleteLoveMessage = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.messages) ? trip.messages : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      messages: trip.messages.filter(m => m.id !== id),
-    };
+      messages: existing.filter(m => m.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
@@ -858,56 +978,61 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addGalleryMemory = (
     memData: Omit<GalleryMemory, 'id' | 'tripId' | 'hearts'>
   ) => {
+    const existing = Array.isArray(trip.gallery) ? trip.gallery : [];
     const newMemory: GalleryMemory = {
       ...memData,
       id: 'gal-' + Date.now().toString(36),
       tripId: trip.id,
       hearts: [activePartnerId],
     };
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
-      gallery: [newMemory, ...trip.gallery],
-    };
+      gallery: [newMemory, ...existing],
+    });
     broadcastTripChange(updated);
   };
 
   const toggleHeartMemory = (memoryId: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.gallery) ? trip.gallery : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      gallery: trip.gallery.map(mem => {
+      gallery: existing.map(mem => {
         if (mem.id !== memoryId) return mem;
-        const hasHeart = mem.hearts.includes(activePartnerId);
+        const hearts = Array.isArray(mem.hearts) ? mem.hearts : [];
+        const hasHeart = hearts.includes(activePartnerId);
         const newHearts = hasHeart
-          ? mem.hearts.filter(h => h !== activePartnerId)
-          : [...mem.hearts, activePartnerId];
+          ? hearts.filter(h => h !== activePartnerId)
+          : [...hearts, activePartnerId];
         return { ...mem, hearts: newHearts };
       }),
-    };
+    });
     broadcastTripChange(updated);
   };
 
   const deleteGalleryMemory = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.gallery) ? trip.gallery : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      gallery: trip.gallery.filter(m => m.id !== id),
-    };
+      gallery: existing.filter(m => m.id !== id),
+    });
     broadcastTripChange(updated);
   };
 
   // Notifications
   const markNotificationRead = (id: string) => {
-    const updated = {
+    const existing = Array.isArray(trip.notifications) ? trip.notifications : [];
+    const updated = ensureTripIntegrity({
       ...trip,
-      notifications: trip.notifications.map(n => (n.id === id ? { ...n, read: true } : n)),
-    };
+      notifications: existing.map(n => (n.id === id ? { ...n, read: true } : n)),
+    });
     broadcastTripChange(updated);
   };
 
   const clearAllNotifications = () => {
-    const updated = {
+    const updated = ensureTripIntegrity({
       ...trip,
       notifications: [],
-    };
+    });
     broadcastTripChange(updated);
   };
 

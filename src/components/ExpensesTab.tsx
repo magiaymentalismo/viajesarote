@@ -130,7 +130,7 @@ export const ExpensesTab: React.FC = () => {
       otros: 0,
     };
 
-    trip.expenses.forEach(exp => {
+    (trip.expenses || []).forEach(exp => {
       const amt = Number(exp.amount) || 0;
       totalGeneral += amt;
 
@@ -172,7 +172,7 @@ export const ExpensesTab: React.FC = () => {
     let settlementsP1ToP2 = 0;
     let settlementsP2ToP1 = 0;
 
-    trip.settlements.forEach(s => {
+    (trip.settlements || []).forEach(s => {
       if (s.isCompleted) {
         if (s.fromPartnerId === 'p1' && s.toPartnerId === 'p2') {
           settlementsP1ToP2 += s.amount;

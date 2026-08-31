@@ -250,28 +250,24 @@ export const ItineraryTab: React.FC = () => {
       ],
     });
 
-    setCitySuccess(`¡${cityName} ha sido añadido a tu itinerario! ✨`);
-    setTimeout(() => {
-      setCitySuccess(null);
-      setIsAddCityOpen(false);
-      // Reset form
-      setCityForm({
-        name: '',
-        country: '',
-        arrivalDate: '',
-        departureDate: '',
-        coverImage: '',
-        googleMapsUrl: '',
-        police: '112',
-        medical: '118',
-        embassy: '',
-        weather: '',
-        plugs: 'Tipo C/F (230V)',
-        transport: '',
-        localCurrency: trip.currency,
-        safety: 'Zona turística segura',
-      });
-    }, 500);
+    setIsAddCityOpen(false);
+    setCityError(null);
+    setCityForm({
+      name: '',
+      country: '',
+      arrivalDate: '',
+      departureDate: '',
+      coverImage: '',
+      googleMapsUrl: '',
+      police: '112',
+      medical: '118',
+      embassy: '',
+      weather: '',
+      plugs: 'Tipo C/F (230V)',
+      transport: '',
+      localCurrency: trip.currency,
+      safety: 'Zona turística segura',
+    });
   };
 
   const handleCreateAccommodation = (e: React.FormEvent) => {

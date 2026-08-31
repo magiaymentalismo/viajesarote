@@ -16,7 +16,46 @@ if (demoTripTemplate) {
   tripsStore.set(demoTripTemplate.id, demoTripTemplate);
   if (demoTripTemplate.inviteCode) {
     tripsStore.set(demoTripTemplate.inviteCode.toUpperCase(), demoTripTemplate);
+    const demoDigits = demoTripTemplate.inviteCode.replace(/\D/g, '');
+    if (demoDigits) tripsStore.set(demoDigits, demoTripTemplate);
   }
+}
+
+function findTripByQuery(query: string): Trip | undefined {
+  if (!query) return undefined;
+  const clean = query.trim();
+  const upper = clean.toUpperCase().replace(/\s+/g, '');
+  const digits = clean.replace(/\D/g, '');
+
+  if (tripsStore.has(clean)) return tripsStore.get(clean);
+  if (tripsStore.has(upper)) return tripsStore.get(upper);
+  if (digits && tripsStore.has(digits)) return tripsStore.get(digits);
+
+  for (const t of tripsStore.values()) {
+    if (!t) continue;
+    const tId = (t.id || '').toUpperCase();
+    const tCode = (t.inviteCode || '').toUpperCase().replace(/\s+/g, '');
+    const tDigits = (t.inviteCode || '').replace(/\D/g, '');
+
+    if (
+      tId === upper ||
+      tCode === upper ||
+      tCode.replace(/-/g, '') === upper.replace(/-/g, '') ||
+      (digits.length >= 3 && tDigits === digits) ||
+      (t.title && t.title.toLowerCase().trim() === clean.toLowerCase())
+    ) {
+      return t;
+    }
+  }
+
+  if (demoTripTemplate) {
+    const demoCode = (demoTripTemplate.inviteCode || '').toUpperCase().replace(/\s+/g, '');
+    if (upper === demoCode || upper === demoTripTemplate.id.toUpperCase() || (digits.length >= 3 && demoCode.includes(digits))) {
+      return demoTripTemplate;
+    }
+  }
+
+  return undefined;
 }
 
 // REST API Endpoints
@@ -24,15 +63,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Private trip access by specific ID or Invite Code only (No public directory)
+// Private trip access by specific ID or Invite Code
 app.get('/api/trips/:id', (req, res) => {
-  const idOrCode = req.params.id;
-  const trip =
-    tripsStore.get(idOrCode) ||
-    tripsStore.get(idOrCode.toUpperCase()) ||
-    Array.from(tripsStore.values()).find(
-      t => t.id === idOrCode || (t.inviteCode && t.inviteCode.toUpperCase() === idOrCode.toUpperCase())
-    );
+  const query = req.params.id;
+  const trip = findTripByQuery(query);
 
   if (!trip) {
     res.status(404).json({ error: 'Trip not found or invalid code' });
@@ -47,12 +81,16 @@ app.post('/api/trips', (req, res) => {
     tripData.id = 'trip-' + Date.now().toString(36);
   }
   if (!tripData.inviteCode) {
-    tripData.inviteCode = 'TRIP-' + Math.floor(1000 + Math.random() * 9000);
+    tripData.inviteCode = 'VIAJE-' + Math.floor(1000 + Math.random() * 9000);
   }
   tripData.lastSyncedAt = new Date().toISOString();
 
   tripsStore.set(tripData.id, tripData);
-  tripsStore.set(tripData.inviteCode.toUpperCase(), tripData);
+  if (tripData.inviteCode) {
+    tripsStore.set(tripData.inviteCode.toUpperCase(), tripData);
+    const digits = tripData.inviteCode.replace(/\D/g, '');
+    if (digits) tripsStore.set(digits, tripData);
+  }
 
   broadcastToRoom(tripData.id, {
     type: 'trip:updated',
@@ -69,8 +107,13 @@ app.put('/api/trips/:id', (req, res) => {
   updatedTrip.lastSyncedAt = new Date().toISOString();
 
   tripsStore.set(tripId, updatedTrip);
+  if (updatedTrip.id) {
+    tripsStore.set(updatedTrip.id, updatedTrip);
+  }
   if (updatedTrip.inviteCode) {
     tripsStore.set(updatedTrip.inviteCode.toUpperCase(), updatedTrip);
+    const digits = updatedTrip.inviteCode.replace(/\D/g, '');
+    if (digits) tripsStore.set(digits, updatedTrip);
   }
 
   broadcastToRoom(tripId, {

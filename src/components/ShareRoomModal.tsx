@@ -45,17 +45,18 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ onClose }) => {
 
   const handleJoinByCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputCode.trim()) return;
+    const cleanCode = inputCode.trim();
+    if (!cleanCode) return;
 
     setJoinStatus('Conectando al viaje privado...');
-    const ok = await joinTripByCode(inputCode.trim().toUpperCase());
+    const ok = await joinTripByCode(cleanCode);
     if (ok) {
-      setJoinStatus('¡Conectado exitosamente!');
+      setJoinStatus('¡Conectado exitosamente! Cargando viaje...');
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, 400);
     } else {
-      setJoinStatus('No se encontró el viaje o el código es incorrecto.');
+      setJoinStatus('No se encontró el viaje. Verifica el código e intenta nuevamente.');
     }
   };
 
