@@ -86,9 +86,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),16px)] bg-black/65 backdrop-blur-xs animate-in fade-in">
       <div
-        className="bg-[#FBF9F5] rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-xl w-full p-6 max-h-[92vh] overflow-y-auto"
+        className="bg-[#FBF9F5] rounded-[28px] sm:rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-xl w-full p-5 sm:p-6 max-h-[88vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
@@ -97,7 +97,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
               <Heart className="w-5 h-5 fill-[#D4A373]" />
             </div>
             <div>
-              <h3 className="text-lg font-serif font-bold text-[#434338]">
+              <h3 className="text-base sm:text-lg font-serif font-bold text-[#434338]">
                 Crear Nuevo Viaje de Pareja
               </h3>
               <p className="text-xs text-[#737260]">
@@ -106,8 +106,10 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-[#8C8B79] hover:text-[#434338] cursor-pointer"
+            className="p-2 rounded-xl text-[#8C8B79] hover:text-[#434338] hover:bg-[#E9E5D9] cursor-pointer transition-colors"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>

@@ -73,7 +73,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     <nav
       id="bottom-navigation-bar"
       aria-label="Barra de Navegación Principal"
-      className="fixed bottom-0 inset-x-0 z-40 bg-[#F5F2ED]/95 backdrop-blur-xl border-t border-[#D9D1B9] px-2 sm:px-6 py-2 shadow-[0_-4px_24px_rgba(67,67,56,0.08)] transition-all"
+      className="fixed bottom-0 inset-x-0 z-40 bg-[#F5F2ED]/95 backdrop-blur-xl border-t border-[#D9D1B9] px-2 sm:px-6 pt-2 pb-[max(env(safe-area-inset-bottom),12px)] shadow-[0_-4px_24px_rgba(67,67,56,0.08)] transition-all"
     >
       <div className="max-w-xl mx-auto flex items-center justify-around gap-1">
         {navItems.map(item => {

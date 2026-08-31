@@ -37,6 +37,17 @@ const TRANSPORT_ICONS: Record<TransportType, React.ReactNode> = {
   bus: <Car className="w-5 h-5 text-[#737260]" />,
 };
 
+const POPULAR_DESTINATIONS = [
+  { name: 'Roma', country: 'Italia', image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'París', country: 'Francia', image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Bangkok', country: 'Tailandia', image: 'https://images.unsplash.com/photo-1508009603885-50cf7c579365?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Tokio', country: 'Japón', image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Barcelona', country: 'España', image: 'https://images.unsplash.com/photo-1583422409516-2895a77efded?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Cancún', country: 'México', image: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Londres', country: 'Reino Unido', image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1000&q=80' },
+  { name: 'Nueva York', country: 'EE.UU.', image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=1000&q=80' },
+];
+
 export const ItineraryTab: React.FC = () => {
   const { trip, addTransport, deleteTransport, addAccommodation, deleteAccommodation, addCity, deleteCity } = useTrip();
 
@@ -47,6 +58,10 @@ export const ItineraryTab: React.FC = () => {
   const [isAddTransportOpen, setIsAddTransportOpen] = useState(false);
   const [isAddCityOpen, setIsAddCityOpen] = useState(false);
   const [isAddAccOpen, setIsAddAccOpen] = useState(false);
+
+  // City Feedback states
+  const [cityError, setCityError] = useState<string | null>(null);
+  const [citySuccess, setCitySuccess] = useState<string | null>(null);
 
   // Form State for Transport
   const [transForm, setTransForm] = useState({
@@ -186,10 +201,11 @@ export const ItineraryTab: React.FC = () => {
     setIsAddTransportOpen(false);
   };
 
-  const handleCreateCity = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateCity = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setCityError(null);
     if (!cityForm.name || !cityForm.name.trim()) {
-      alert('Por favor escribe el nombre de la ciudad o destino');
+      setCityError('Por favor escribe o selecciona el nombre de la ciudad o destino');
       return;
     }
 
@@ -234,25 +250,28 @@ export const ItineraryTab: React.FC = () => {
       ],
     });
 
-    // Reset form
-    setCityForm({
-      name: '',
-      country: '',
-      arrivalDate: '',
-      departureDate: '',
-      coverImage: '',
-      googleMapsUrl: '',
-      police: '112',
-      medical: '118',
-      embassy: '',
-      weather: '',
-      plugs: 'Tipo C/F (230V)',
-      transport: '',
-      localCurrency: trip.currency,
-      safety: 'Zona turística segura',
-    });
-
-    setIsAddCityOpen(false);
+    setCitySuccess(`¡${cityName} ha sido añadido a tu itinerario! ✨`);
+    setTimeout(() => {
+      setCitySuccess(null);
+      setIsAddCityOpen(false);
+      // Reset form
+      setCityForm({
+        name: '',
+        country: '',
+        arrivalDate: '',
+        departureDate: '',
+        coverImage: '',
+        googleMapsUrl: '',
+        police: '112',
+        medical: '118',
+        embassy: '',
+        weather: '',
+        plugs: 'Tipo C/F (230V)',
+        transport: '',
+        localCurrency: trip.currency,
+        safety: 'Zona turística segura',
+      });
+    }, 500);
   };
 
   const handleCreateAccommodation = (e: React.FormEvent) => {
@@ -806,18 +825,25 @@ export const ItineraryTab: React.FC = () => {
 
       {/* MODAL 2: Add Transport */}
       {isAddTransportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),16px)] bg-black/65 backdrop-blur-xs animate-in fade-in">
           <div
-            className="bg-white rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
+            className="bg-[#FBF9F5] rounded-[28px] sm:rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-5 sm:p-7 max-h-[88vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
-              <h3 className="text-lg font-serif font-bold text-[#434338]">
-                Añadir Vuelo o Traslado
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-[#E9EDC6] text-[#5A5A40]">
+                  <Plane className="w-5 h-5" />
+                </div>
+                <h3 className="text-base sm:text-lg font-serif font-bold text-[#434338]">
+                  Añadir Vuelo o Traslado
+                </h3>
+              </div>
               <button
+                type="button"
                 onClick={() => setIsAddTransportOpen(false)}
-                className="p-1.5 rounded-xl text-[#737260] hover:text-[#434338] hover:bg-[#F5F2ED] cursor-pointer"
+                className="p-2 rounded-xl text-[#8C8B79] hover:text-[#434338] hover:bg-[#E9E5D9] cursor-pointer transition-colors"
+                title="Cerrar"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1036,85 +1062,148 @@ export const ItineraryTab: React.FC = () => {
 
       {/* MODAL 3: Add City */}
       {isAddCityOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),16px)] bg-black/65 backdrop-blur-xs animate-in fade-in">
           <div
-            className="bg-white rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-md w-full p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
+            className="bg-[#FBF9F5] rounded-[28px] sm:rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-5 sm:p-7 max-h-[88vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
-              <h3 className="text-lg font-serif font-bold text-[#434338]">
-                Añadir Ciudad o Destino
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-[#E9EDC6] text-[#5A5A40]">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-serif font-bold text-[#434338]">
+                    Añadir Ciudad o Destino
+                  </h3>
+                  <p className="text-xs text-[#737260]">
+                    Crea una nueva parada para su itinerario
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => setIsAddCityOpen(false)}
-                className="p-1.5 rounded-xl text-[#737260] hover:text-[#434338] hover:bg-[#F5F2ED] cursor-pointer"
+                type="button"
+                onClick={() => {
+                  setCityError(null);
+                  setIsAddCityOpen(false);
+                }}
+                className="p-2 rounded-xl text-[#8C8B79] hover:text-[#434338] hover:bg-[#E9E5D9] cursor-pointer transition-colors"
+                title="Cerrar"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateCity} noValidate className="space-y-3.5 mt-4">
+            {/* Error & Success Messages */}
+            {cityError && (
+              <div className="mt-3 p-3 bg-[#FBF0E4] border border-[#F3DEC9] rounded-2xl text-xs font-bold text-[#8A5A2B] flex items-center gap-2">
+                <span>⚠️ {cityError}</span>
+              </div>
+            )}
+
+            {citySuccess && (
+              <div className="mt-3 p-3 bg-[#E9EDC6] border border-[#DCE4B8] rounded-2xl text-xs font-bold text-[#5A5A40] flex items-center gap-2 animate-in fade-in">
+                <Sparkles className="w-4 h-4 text-[#5A5A40] shrink-0" />
+                <span>{citySuccess}</span>
+              </div>
+            )}
+
+            {/* Popular Quick Presets */}
+            <div className="mt-4 p-3 bg-[#FAF6E9] rounded-2xl border border-[#EBE3CD] space-y-2">
+              <span className="text-[11px] font-bold uppercase text-[#737260] block">
+                Destinos Populares (1 Toque para rellenar)
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {POPULAR_DESTINATIONS.map(dest => (
+                  <button
+                    key={dest.name}
+                    type="button"
+                    onClick={() => {
+                      setCityForm({
+                        ...cityForm,
+                        name: dest.name,
+                        country: dest.country,
+                        coverImage: dest.image,
+                        arrivalDate: cityForm.arrivalDate || trip.startDate,
+                        departureDate: cityForm.departureDate || trip.endDate,
+                      });
+                      setCityError(null);
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold rounded-full bg-white border border-[#D9D1B9] hover:bg-[#5A5A40] hover:text-white hover:border-[#5A5A40] transition-colors cursor-pointer text-[#434338]"
+                  >
+                    📍 {dest.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateCity} noValidate className="space-y-4 mt-4">
               <div>
-                <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
-                  Nombre de la Ciudad *
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  Nombre de la Ciudad / Parada *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej: Bangkok, Roma, París..."
+                  placeholder="Ej: Bangkok, Roma, París, Cancún..."
                   value={cityForm.name}
-                  onChange={e => setCityForm({ ...cityForm, name: e.target.value })}
-                  className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
+                  onChange={e => {
+                    setCityForm({ ...cityForm, name: e.target.value });
+                    if (cityError) setCityError(null);
+                  }}
+                  className="w-full text-sm p-3 border border-[#D9D1B9] rounded-2xl bg-white font-bold text-[#434338] focus:outline-[#5A5A40]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
                   País
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Tailandia, Italia, Francia..."
+                  placeholder="Ej: Tailandia, Italia, Francia, México..."
                   value={cityForm.country}
                   onChange={e => setCityForm({ ...cityForm, country: e.target.value })}
-                  className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
+                  className="w-full text-xs p-3 border border-[#D9D1B9] rounded-2xl bg-white text-[#434338] focus:outline-[#5A5A40]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
-                    Llegada
-                  </label>
-                  <input
-                    type="date"
-                    value={cityForm.arrivalDate}
-                    onChange={e => setCityForm({ ...cityForm, arrivalDate: e.target.value })}
-                    className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
-                    Salida
-                  </label>
-                  <input
-                    type="date"
-                    value={cityForm.departureDate}
-                    onChange={e => setCityForm({ ...cityForm, departureDate: e.target.value })}
-                    className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
-                  />
+              {/* Spacious Dates */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  Fechas de Estancia
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[11px] text-[#737260] font-medium block mb-1">📅 Fecha de Llegada</span>
+                    <input
+                      type="date"
+                      value={cityForm.arrivalDate}
+                      onChange={e => setCityForm({ ...cityForm, arrivalDate: e.target.value })}
+                      className="w-full text-xs p-3 border border-[#D9D1B9] rounded-2xl bg-white text-[#434338] focus:outline-[#5A5A40]"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-[#737260] font-medium block mb-1">📅 Fecha de Salida</span>
+                    <input
+                      type="date"
+                      value={cityForm.departureDate}
+                      onChange={e => setCityForm({ ...cityForm, departureDate: e.target.value })}
+                      className="w-full text-xs p-3 border border-[#D9D1B9] rounded-2xl bg-white text-[#434338] focus:outline-[#5A5A40]"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Photo Upload: URL or Gallery */}
               <div>
-                <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
-                  Foto de Portada de la Ciudad
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  Foto de Portada de la Ciudad (Opcional)
                 </label>
                 <div className="space-y-2">
-                  <label className="w-full flex items-center justify-center gap-2 p-2.5 border border-dashed border-[#D9D1B9] hover:border-[#5A5A40] rounded-2xl bg-[#F9F8F4] text-xs font-bold text-[#5A5A40] cursor-pointer transition-colors">
+                  <label className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-[#D9D1B9] hover:border-[#5A5A40] rounded-2xl bg-[#F9F8F4] text-xs font-bold text-[#5A5A40] cursor-pointer transition-colors">
                     <Camera className="w-4 h-4 text-[#D4A373]" />
-                    <span>Subir de Galería / Cámara</span>
+                    <span>Subir Foto desde Galería / Cámara</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1127,12 +1216,12 @@ export const ItineraryTab: React.FC = () => {
                     placeholder="O escribe URL de foto: https://images.unsplash.com/..."
                     value={cityForm.coverImage}
                     onChange={e => setCityForm({ ...cityForm, coverImage: e.target.value })}
-                    className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
+                    className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl bg-white focus:outline-[#5A5A40]"
                   />
                 </div>
 
                 {cityForm.coverImage && (
-                  <div className="relative mt-2 h-28 rounded-2xl overflow-hidden border border-[#D9D1B9]">
+                  <div className="relative mt-2 h-32 rounded-2xl overflow-hidden border border-[#D9D1B9]">
                     <img
                       src={cityForm.coverImage}
                       alt="Vista previa ciudad"
@@ -1141,7 +1230,8 @@ export const ItineraryTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setCityForm({ ...cityForm, coverImage: '' })}
-                      className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-black cursor-pointer"
+                      className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 text-white hover:bg-black cursor-pointer"
+                      title="Quitar foto"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1150,31 +1240,36 @@ export const ItineraryTab: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#5A5A40] uppercase mb-1">
-                  📍 Link de Google Maps (Opcional)
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  📍 Enlace de Google Maps (Opcional)
                 </label>
                 <input
                   type="text"
                   placeholder="https://maps.google.com/..."
                   value={cityForm.googleMapsUrl}
                   onChange={e => setCityForm({ ...cityForm, googleMapsUrl: e.target.value })}
-                  className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl focus:outline-[#5A5A40]"
+                  className="w-full text-xs p-2.5 border border-[#D9D1B9] rounded-2xl bg-white focus:outline-[#5A5A40]"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-[#EFEDE7]">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EFEDE7]">
                 <button
                   type="button"
-                  onClick={() => setIsAddCityOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-[#737260] hover:bg-[#F5F2ED] rounded-xl cursor-pointer"
+                  onClick={() => {
+                    setCityError(null);
+                    setIsAddCityOpen(false);
+                  }}
+                  className="px-4 py-2.5 text-xs font-bold text-[#737260] hover:bg-[#E9E5D9] rounded-2xl cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-xl cursor-pointer"
+                  type="button"
+                  onClick={() => handleCreateCity()}
+                  className="px-6 py-3 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-2xl cursor-pointer shadow-md shadow-[#5A5A40]/15 active:scale-95 transition-transform flex items-center gap-2"
                 >
-                  Crear Destino
+                  <Plus className="w-4 h-4" />
+                  <span>Crear Destino</span>
                 </button>
               </div>
             </form>
@@ -1184,18 +1279,25 @@ export const ItineraryTab: React.FC = () => {
 
       {/* MODAL 4: Add Accommodation */}
       {isAddAccOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),16px)] bg-black/65 backdrop-blur-xs animate-in fade-in">
           <div
-            className="bg-white rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-md w-full p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
+            className="bg-[#FBF9F5] rounded-[28px] sm:rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-5 sm:p-7 max-h-[88vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
-              <h3 className="text-lg font-serif font-bold text-[#434338]">
-                Añadir Hotel o Alojamiento
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-[#E9EDC6] text-[#5A5A40]">
+                  <Hotel className="w-5 h-5" />
+                </div>
+                <h3 className="text-base sm:text-lg font-serif font-bold text-[#434338]">
+                  Añadir Hotel o Alojamiento
+                </h3>
+              </div>
               <button
+                type="button"
                 onClick={() => setIsAddAccOpen(false)}
-                className="p-1.5 rounded-xl text-[#737260] hover:text-[#434338] hover:bg-[#F5F2ED] cursor-pointer"
+                className="p-2 rounded-xl text-[#8C8B79] hover:text-[#434338] hover:bg-[#E9E5D9] cursor-pointer transition-colors"
+                title="Cerrar"
               >
                 <X className="w-5 h-5" />
               </button>

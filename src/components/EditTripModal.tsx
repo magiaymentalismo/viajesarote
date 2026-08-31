@@ -50,9 +50,9 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),16px)] bg-black/65 backdrop-blur-xs animate-in fade-in">
       <div
-        className="bg-[#FBF9F5] rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-6 max-h-[92vh] overflow-y-auto"
+        className="bg-[#FBF9F5] rounded-[28px] sm:rounded-[32px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-5 sm:p-6 max-h-[88vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
@@ -70,8 +70,10 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-[#8C8B79] hover:text-[#434338] cursor-pointer"
+            className="p-2 rounded-xl text-[#8C8B79] hover:text-[#434338] hover:bg-[#E9E5D9] cursor-pointer transition-colors"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -150,46 +152,50 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
-                Inicio
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="w-full text-xs p-2 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338]"
-              />
+          {/* Dates & Currency */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  📅 Fecha de Inicio
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full text-xs p-3 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338] focus:outline-[#5A5A40]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
+                  📅 Fecha de Fin
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full text-xs p-3 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338] focus:outline-[#5A5A40]"
+                />
+              </div>
             </div>
+
             <div>
               <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
-                Fin
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="w-full text-xs p-2 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
-                Moneda
+                🪙 Moneda Principal del Viaje
               </label>
               <select
                 value={currency}
                 onChange={e => setCurrency(e.target.value)}
-                className="w-full text-xs p-2 rounded-2xl border border-[#D9D1B9] bg-white font-bold text-[#434338]"
+                className="w-full text-xs p-3 rounded-2xl border border-[#D9D1B9] bg-white font-bold text-[#434338] focus:outline-[#5A5A40]"
               >
-                <option value="EUR">€ EUR</option>
-                <option value="USD">$ USD</option>
-                <option value="ARS">$ ARS</option>
-                <option value="MXN">$ MXN</option>
-                <option value="COP">$ COP</option>
-                <option value="CLP">$ CLP</option>
-                <option value="GBP">£ GBP</option>
-                <option value="JPY">¥ JPY</option>
+                <option value="EUR">€ EUR - Euro</option>
+                <option value="USD">$ USD - Dólar Estadounidense</option>
+                <option value="ARS">$ ARS - Peso Argentino</option>
+                <option value="MXN">$ MXN - Peso Mexicano</option>
+                <option value="COP">$ COP - Peso Colombiano</option>
+                <option value="CLP">$ CLP - Peso Chileno</option>
+                <option value="GBP">£ GBP - Libra Esterlina</option>
+                <option value="JPY">¥ JPY - Yen Japonés</option>
               </select>
             </div>
           </div>
