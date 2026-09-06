@@ -40,7 +40,7 @@ const COVER_PRESETS = [
 ];
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => {
-  const { createNewTrip, joinTripByCode, setActivePartnerId, loadDemoTrip, importTripJson } = useTrip();
+  const { trip, createNewTrip, joinTripByCode, setActivePartnerId, loadDemoTrip, importTripJson } = useTrip();
 
   const [mode, setMode] = useState<'welcome' | 'create' | 'join' | 'select-identity'>('welcome');
   const [createdTempTrip, setCreatedTempTrip] = useState<Trip | null>(null);
@@ -103,20 +103,31 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
 
     setIsJoining(true);
     setJoinError('');
-    const success = await joinTripByCode(joinCodeInput.trim());
-    setIsJoining(false);
+    try {
+      const success = await joinTripByCode(joinCodeInput.trim());
+      setIsJoining(false);
 
-    if (success) {
-      setMode('select-identity');
-    } else {
-      setJoinError('No encontramos ningún viaje con ese código. Verifícalo e inténtalo de nuevo.');
+      if (success) {
+        setMode('select-identity');
+      } else {
+        setJoinError('No encontramos ningún viaje con ese código o enlace. Verifícalo e inténtalo de nuevo.');
+      }
+    } catch {
+      setIsJoining(false);
+      setJoinError('Error al conectar. Verifica el código e intenta nuevamente.');
     }
   };
 
   const handleIdentitySelect = (partnerId: PartnerId) => {
     setActivePartnerId(partnerId);
+    localStorage.setItem('parejas_en_ruta_partner_id', partnerId);
+    localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
     onTripReady();
   };
+
+  const currentActiveTrip = createdTempTrip || trip;
+  const partner1 = currentActiveTrip?.partners?.[0] || { id: 'p1', name: p1Name, avatarEmoji: p1Emoji, avatarColor: '#5A5A40' };
+  const partner2 = currentActiveTrip?.partners?.[1] || { id: 'p2', name: p2Name, avatarEmoji: p2Emoji, avatarColor: '#D4A373' };
 
   return (
     <div className="min-h-screen bg-[#F5F2ED] flex flex-col items-center justify-center p-4 sm:p-6 text-[#434338]">
@@ -501,38 +512,38 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
               <button
                 id="btn-select-identity-p1"
                 onClick={() => handleIdentitySelect('p1')}
-                className="p-5 rounded-3xl bg-white hover:bg-[#FAF6E9] border-2 border-[#D9D1B9] hover:border-[#5A5A40] text-center transition-all cursor-pointer group shadow-sm flex flex-col items-center"
+                className="p-5 rounded-3xl bg-white hover:bg-[#FAF6E9] border-2 border-[#D9D1B9] hover:border-[#5A5A40] text-center transition-all cursor-pointer group shadow-sm flex flex-col items-center active:scale-95"
               >
                 <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">
-                  {p1Emoji}
+                  {partner1.avatarEmoji}
                 </div>
                 <span className="text-[10px] font-bold uppercase text-[#8C8B79]">
                   Viajero 1
                 </span>
                 <span className="text-base font-serif font-bold text-[#434338]">
-                  Soy {p1Name}
+                  Soy {partner1.name}
                 </span>
                 <span className="text-[11px] text-[#5A5A40] font-semibold mt-2 px-3 py-1 bg-[#E9EDC6] rounded-full">
-                  Comenzar como {p1Name} →
+                  Comenzar como {partner1.name} →
                 </span>
               </button>
 
               <button
                 id="btn-select-identity-p2"
                 onClick={() => handleIdentitySelect('p2')}
-                className="p-5 rounded-3xl bg-white hover:bg-[#FAF6E9] border-2 border-[#D9D1B9] hover:border-[#5A5A40] text-center transition-all cursor-pointer group shadow-sm flex flex-col items-center"
+                className="p-5 rounded-3xl bg-white hover:bg-[#FAF6E9] border-2 border-[#D9D1B9] hover:border-[#5A5A40] text-center transition-all cursor-pointer group shadow-sm flex flex-col items-center active:scale-95"
               >
                 <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">
-                  {p2Emoji}
+                  {partner2.avatarEmoji}
                 </div>
                 <span className="text-[10px] font-bold uppercase text-[#8C8B79]">
                   Viajero 2
                 </span>
                 <span className="text-base font-serif font-bold text-[#434338]">
-                  Soy {p2Name}
+                  Soy {partner2.name}
                 </span>
                 <span className="text-[11px] text-[#5A5A40] font-semibold mt-2 px-3 py-1 bg-[#E9EDC6] rounded-full">
-                  Comenzar como {p2Name} →
+                  Comenzar como {partner2.name} →
                 </span>
               </button>
             </div>

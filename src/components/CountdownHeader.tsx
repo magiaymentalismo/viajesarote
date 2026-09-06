@@ -18,6 +18,8 @@ export type ActiveTab =
 
 interface CountdownHeaderProps {
   onOpenEditTripModal: () => void;
+  activeTab?: ActiveTab;
+  setActiveTab?: (tab: ActiveTab) => void;
 }
 
 interface TimeRemaining {
@@ -31,6 +33,8 @@ interface TimeRemaining {
 
 export const CountdownHeader: React.FC<CountdownHeaderProps> = ({
   onOpenEditTripModal,
+  activeTab,
+  setActiveTab,
 }) => {
   const { trip } = useTrip();
 
@@ -224,6 +228,44 @@ export const CountdownHeader: React.FC<CountdownHeaderProps> = ({
             )}
           </div>
         </div>
+
+        {/* Desktop Tabs Bar */}
+        {setActiveTab && activeTab && (
+          <div className="hidden md:flex items-center gap-2 pt-4 mt-4 border-t border-white/10">
+            {[
+              { id: 'itinerario' as ActiveTab, label: '🗺️ Itinerario & Destinos', count: trip.cities.length },
+              { id: 'gastos' as ActiveTab, label: '💰 Gastos & Cuentas', count: trip.expenses.length },
+              { id: 'sitios' as ActiveTab, label: '📍 Sitios & Mapa', count: trip.sites.length },
+              { id: 'equipaje-docs' as ActiveTab, label: '🧳 Equipaje & Docs', count: trip.packingList.length },
+              { id: 'buzon' as ActiveTab, label: '💌 Recuerdos & Buzón', count: trip.messages.length },
+            ].map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isActive
+                      ? 'bg-[#E9EDC6] text-[#434338] shadow-sm'
+                      : 'bg-black/30 hover:bg-black/50 text-[#D9D1B9] hover:text-white'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.count > 0 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        isActive ? 'bg-[#5A5A40] text-white' : 'bg-white/20 text-white'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

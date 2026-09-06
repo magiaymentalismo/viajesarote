@@ -5,11 +5,11 @@ import { PartnerId } from '../types';
 
 interface WhoAmIModalProps {
   onClose: () => void;
-  isOpen: boolean;
+  isOpen?: boolean;
   onSelectCallback?: (id: PartnerId) => void;
 }
 
-export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({ onClose, isOpen, onSelectCallback }) => {
+export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({ onClose, isOpen = true, onSelectCallback }) => {
   const { trip, activePartnerId, setActivePartnerId, updateTripInfo } = useTrip();
 
   const [editingP1, setEditingP1] = useState(false);
@@ -19,7 +19,7 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({ onClose, isOpen, onSel
   const [p2Name, setP2Name] = useState(trip.partners[1]?.name || 'Viajero 2');
   const [p2Emoji, setP2Emoji] = useState(trip.partners[1]?.avatarEmoji || '🌸');
 
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
 
   const handleSelect = (id: PartnerId) => {
     setActivePartnerId(id);

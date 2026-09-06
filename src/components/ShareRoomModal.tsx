@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useTrip } from '../context/TripContext';
+import { useTrip, encodeTripData } from '../context/TripContext';
 import {
   X,
   Share2,
@@ -11,6 +11,8 @@ import {
   Sparkles,
   Heart,
   ArrowRight,
+  Send,
+  MessageCircle,
 } from 'lucide-react';
 
 interface ShareRoomModalProps {
@@ -26,7 +28,10 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ onClose }) => {
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
 
   const inviteCode = trip.inviteCode || 'ITALIA-2026';
-  const shareableUrl = `${window.location.origin}${window.location.pathname}?join=${inviteCode}`;
+  const b64Data = encodeTripData(trip);
+  const shareableUrl = `${window.location.origin}${window.location.pathname}?join=${encodeURIComponent(inviteCode)}#data=${b64Data}`;
+  const whatsappMessage = `¡Hola mi amor! 💖 Sumate a nuestro viaje "${trip.title}" tocando acá:\n${shareableUrl}\n\nO ingresá con el código: ${inviteCode}`;
+  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappMessage)}`;
 
   const p1 = trip.partners[0];
   const p2 = trip.partners[1];
@@ -144,11 +149,23 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ onClose }) => {
             </div>
           </div>
 
-          {/* Share Link Direct */}
-          <div className="space-y-2">
+          {/* Share Link Direct & WhatsApp */}
+          <div className="space-y-3">
             <label className="block text-xs font-bold text-[#434338] uppercase">
-              Enlace Directo para Enviar por WhatsApp
+              Invitar a tu Pareja al Viaje
             </label>
+
+            {/* Direct WhatsApp Share Button */}
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <MessageCircle className="w-4 h-4 fill-white" />
+              <span>Enviar Invitación por WhatsApp</span>
+            </a>
+
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -157,15 +174,16 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ onClose }) => {
                 className="flex-1 text-xs px-3 py-2.5 rounded-2xl border border-[#D9D1B9] bg-white text-[#737260] truncate"
               />
               <button
+                type="button"
                 onClick={handleCopyLink}
-                className="px-4 py-2.5 bg-[#D4A373] hover:bg-[#c29364] text-white rounded-2xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm"
+                className="px-4 py-2.5 bg-[#D4A373] hover:bg-[#c29364] text-white rounded-2xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm active:scale-95"
               >
                 {copiedLink ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                {copiedLink ? '¡Enlace Copiado!' : 'Copiar Enlace'}
+                {copiedLink ? '¡Copiado!' : 'Copiar Enlace'}
               </button>
             </div>
             <p className="text-[11px] text-[#737260]">
-              Cuando tu pareja abra este enlace en su navegador o móvil, entrará automáticamente a este mismo viaje privado.
+              Tu pareja se unirá de inmediato al tocar el enlace desde WhatsApp o su navegador, sincronizando automáticamente los gastos y destinos.
             </p>
           </div>
 

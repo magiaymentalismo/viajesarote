@@ -95,6 +95,81 @@ interface TripContextType {
 const LOCAL_STORAGE_KEY = 'parejas_en_ruta_trip_v2';
 const LOCAL_STORAGE_TRIPS_LIST = 'parejas_en_ruta_trips_list_v2';
 const LOCAL_STORAGE_PARTNER = 'parejas_en_ruta_partner_id';
+const CLOUD_SYNC_BUCKET = 'parejas_en_ruta_v2';
+
+export const encodeTripData = (obj: unknown): string => {
+  try {
+    const json = JSON.stringify(obj);
+    const bytes = new TextEncoder().encode(json);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  } catch {
+    return '';
+  }
+};
+
+export const decodeTripData = (b64: string): Trip | null => {
+  try {
+    const cleanB64 = b64.replace(/^#data=/, '').replace(/^data=/, '').replace(/^"/, '').replace(/"$/, '').trim();
+    if (!cleanB64) return null;
+    const binary = atob(cleanB64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const json = new TextDecoder().decode(bytes);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
+export const saveTripToCloud = async (tripToSave: Trip): Promise<boolean> => {
+  try {
+    const cleanCode = (tripToSave.inviteCode || tripToSave.id).toUpperCase().replace(/\s+/g, '');
+    const b64 = encodeTripData(tripToSave);
+    if (!b64) return false;
+
+    // Save under trip invite code for 1-click partner join
+    fetch(
+      `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanCode)}/${encodeURIComponent(b64)}`,
+      { method: 'POST', headers: { 'Content-Length': '0' } }
+    ).catch(() => {});
+
+    // Also save under trip.id if different
+    if (tripToSave.id && tripToSave.id.toUpperCase() !== cleanCode) {
+      fetch(
+        `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(tripToSave.id.toUpperCase())}/${encodeURIComponent(b64)}`,
+        { method: 'POST', headers: { 'Content-Length': '0' } }
+      ).catch(() => {});
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const fetchTripFromCloud = async (code: string): Promise<Trip | null> => {
+  try {
+    const cleanCode = code.toUpperCase().replace(/\s+/g, '');
+    const res = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanCode)}`);
+    if (!res.ok) return null;
+    const rawVal = await res.text();
+    if (!rawVal || rawVal === 'null' || rawVal === '""') return null;
+
+    const unquoted = rawVal.replace(/^"/, '').replace(/"$/, '');
+    const decoded = decodeTripData(unquoted);
+    if (decoded && decoded.id) {
+      return ensureTripIntegrity(decoded);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 export const ensureTripIntegrity = (t: Partial<Trip> | null | undefined): Trip => {
   if (!t) return createEmptyTrip();
@@ -255,7 +330,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [trip]);
 
-  // Broadcast change through Local BroadcastChannel + HTTP REST
+  // Broadcast change through Local BroadcastChannel + Cloud KV + Server
   const broadcastTripChange = useCallback((updatedTrip: Trip) => {
     const tripWithTimestamp = ensureTripIntegrity({
       ...updatedTrip,
@@ -272,7 +347,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    // 2. Sync to Server via REST API
+    // 2. Global Cloud Sync: works on Vercel and separate mobile phones without login
+    saveTripToCloud(tripWithTimestamp);
+
+    // 3. Sync to local Server via REST API if container is active
     fetch(`/api/trips/${tripWithTimestamp.id}`, {
       method: 'PUT',
       headers: { 
@@ -281,26 +359,44 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
       body: JSON.stringify(tripWithTimestamp),
     }).catch(() => {
-      // Offline fallback: persists safely in LocalStorage
+      // Offline fallback: persists safely in LocalStorage & Cloud KV
     });
   }, [activePartnerId]);
 
-  // Sync / Poll trip with server
+  // Sync / Poll trip with Cloud KV and optional server
   const syncTripWithServer = useCallback(async (tripToSync: Trip, silent = false) => {
     if (!navigator.onLine) return;
     if (!silent) setIsSyncing(true);
 
     try {
+      // Step A: Check Cloud KV (Cross-device and Vercel compatible)
+      const cleanCode = (tripToSync.inviteCode || tripToSync.id).toUpperCase().replace(/\s+/g, '');
+      const remoteCloud = await fetchTripFromCloud(cleanCode);
+      if (remoteCloud && remoteCloud.id === tripToSync.id) {
+        const remoteTime = new Date(remoteCloud.lastSyncedAt || 0).getTime();
+        const localTime = new Date(currentTripRef.current.lastSyncedAt || 0).getTime();
+
+        const expensesChanged = remoteCloud.expenses.length !== currentTripRef.current.expenses.length;
+        const citiesChanged = remoteCloud.cities.length !== currentTripRef.current.cities.length;
+        const messagesChanged = remoteCloud.messages.length !== currentTripRef.current.messages.length;
+
+        if (remoteTime > localTime || expensesChanged || citiesChanged || messagesChanged) {
+          setTrip(remoteCloud);
+          return;
+        }
+      }
+
+      // Step B: Check server container if running
       const res = await fetch(`/api/trips/${encodeURIComponent(tripToSync.id)}`);
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const remoteTripRaw = await res.json();
         if (remoteTripRaw && remoteTripRaw.id === tripToSync.id) {
           const remoteTrip = ensureTripIntegrity(remoteTripRaw);
           const remoteTime = new Date(remoteTrip.lastSyncedAt || 0).getTime();
           const localTime = new Date(currentTripRef.current.lastSyncedAt || 0).getTime();
           
-          // Only update if remote is newer or has distinct changes
-          if (remoteTime > localTime || remoteTrip.expenses.length !== currentTripRef.current.expenses.length || remoteTrip.cities.length !== currentTripRef.current.cities.length) {
+          if (remoteTime > localTime || remoteTrip.expenses.length !== currentTripRef.current.expenses.length) {
             setTrip(remoteTrip);
           }
         }
@@ -331,12 +427,12 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
 
-    // Poll every 3 seconds when active
+    // Poll every 4 seconds when active for smooth live co-editing
     pollIntervalRef.current = setInterval(() => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
         syncTripWithServer(currentTripRef.current, true);
       }
-    }, 3000);
+    }, 4000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -346,29 +442,41 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [syncTripWithServer]);
 
-  // Check URL parameters on mount for deep link join (e.g. ?join=VIAJE-1234 or ?trip=VIAJE-1234)
+  // Check URL parameters and hash on mount for 1-click WhatsApp deep link join
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // 1. Direct base64 hash transfer (instant, 100% reliable on WhatsApp/Safari/Chrome)
+    const hash = window.location.hash;
+    if (hash && (hash.startsWith('#data=') || hash.includes('data='))) {
+      const rawData = hash.replace(/^#data=/, '').replace(/^#.*data=/, '');
+      const decoded = decodeTripData(rawData);
+      if (decoded && decoded.id) {
+        const sanitized = ensureTripIntegrity(decoded);
+        setTrip(sanitized);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+        saveTripToCloud(sanitized);
+        // Clean URL hash without reloading
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        return;
+      }
+    }
+
+    // 2. Query parameter join code (e.g. ?join=VIAJE-1234 or ?trip=VIAJE-1234)
     const urlParams = new URLSearchParams(window.location.search);
     const joinCode = urlParams.get('join') || urlParams.get('trip') || urlParams.get('tripCode') || urlParams.get('code');
     
     if (joinCode && joinCode.trim().length > 0) {
       const code = joinCode.trim();
-      fetch(`/api/trips/${encodeURIComponent(code)}`)
-        .then(res => res.ok ? res.json() : null)
-        .then(remoteTrip => {
-          if (remoteTrip && remoteTrip.id) {
-            const sanitized = ensureTripIntegrity(remoteTrip);
-            setTrip(sanitized);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-            // Clean URL without reloading
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
-          }
-        })
-        .catch(() => {});
+      joinTripByCode(code).then(success => {
+        if (success) {
+          // Clean URL without reloading
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+      });
     }
   }, []);
 
@@ -556,14 +664,78 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     broadcastTripChange(updated);
   };
 
-  const joinTripByCode = async (code: string): Promise<boolean> => {
-    const clean = code ? code.trim() : '';
-    if (!clean) return false;
+  const joinTripByCode = async (rawCode: string): Promise<boolean> => {
+    const input = rawCode ? rawCode.trim() : '';
+    if (!input) return false;
 
-    // 1. Try server fetch
+    // Step A: Check if input is a URL or snippet containing #data= or data= (instant 0-network load)
+    if (input.includes('#data=') || input.includes('data=')) {
+      const parts = input.split(/#data=|&data=|\?data=/);
+      if (parts[1]) {
+        const decoded = decodeTripData(parts[1]);
+        if (decoded && decoded.id) {
+          const sanitized = ensureTripIntegrity(decoded);
+          setTrip(sanitized);
+          setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+          localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+          broadcastTripChange(sanitized);
+          return true;
+        }
+      }
+    }
+
+    // Step B: Check if input is a direct base64 JSON payload
+    if (input.length > 50 && !input.includes(' ')) {
+      const directDecoded = decodeTripData(input);
+      if (directDecoded && directDecoded.id) {
+        const sanitized = ensureTripIntegrity(directDecoded);
+        setTrip(sanitized);
+        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+        broadcastTripChange(sanitized);
+        return true;
+      }
+    }
+
+    // Step C: If user pasted a full URL (e.g. https://.../?join=VIAJE-1234), extract clean code
+    let cleanCode = input;
+    if (cleanCode.includes('join=') || cleanCode.includes('code=')) {
+      try {
+        const match = cleanCode.match(/[?&](?:join|code)=([^&#]+)/);
+        if (match && match[1]) {
+          cleanCode = decodeURIComponent(match[1]);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    cleanCode = cleanCode.replace(/^#/, '').trim();
+    const cleanUpper = cleanCode.toUpperCase().replace(/\s+/g, '');
+    const digitsOnly = cleanCode.replace(/\D/g, '');
+
+    // Step D: Query Global Cloud KV (works on Vercel and separate mobile devices)
     try {
-      const res = await fetch(`/api/trips/${encodeURIComponent(clean)}`);
-      if (res.ok) {
+      const cloudTrip = await fetchTripFromCloud(cleanUpper);
+      if (cloudTrip && cloudTrip.id) {
+        const sanitized = ensureTripIntegrity(cloudTrip);
+        setTrip(sanitized);
+        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+        broadcastTripChange(sanitized);
+        return true;
+      }
+    } catch {
+      // cloud fetch failed or offline
+    }
+
+    // Step E: Query Server container if active
+    try {
+      const res = await fetch(`/api/trips/${encodeURIComponent(cleanCode)}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const foundTrip = await res.json();
         if (foundTrip && foundTrip.id) {
           const sanitized = ensureTripIntegrity(foundTrip);
@@ -579,10 +751,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // offline lookup in local list
     }
 
-    // 2. Fallback to local trips list or demo trip
-    const cleanUpper = clean.toUpperCase().replace(/\s+/g, '');
-    const digitsOnly = clean.replace(/\D/g, '');
-
+    // Step F: Fallback to local trips list or demo trip
     const candidates = [...tripsList, trip, demoTripTemplate];
     const local = candidates.find(t => {
       if (!t) return false;

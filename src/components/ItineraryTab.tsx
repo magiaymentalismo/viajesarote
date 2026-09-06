@@ -252,6 +252,8 @@ export const ItineraryTab: React.FC = () => {
 
     setIsAddCityOpen(false);
     setCityError(null);
+    setCitySuccess(`¡Destino "${cityName}" agregado con éxito!`);
+    setTimeout(() => setCitySuccess(null), 4000);
     setCityForm({
       name: '',
       country: '',
@@ -357,6 +359,22 @@ export const ItineraryTab: React.FC = () => {
             Añadir Ciudad / Destino
           </button>
         </div>
+
+        {citySuccess && (
+          <div className="p-3.5 bg-[#E9EDC6]/80 border border-[#CCD5AE] text-[#5A5A40] text-xs font-bold rounded-2xl flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4 text-[#5A5A40]" />
+              <span>{citySuccess}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCitySuccess(null)}
+              className="text-[#737260] hover:text-[#434338] p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Cities Grid */}
         {trip.cities.length === 0 ? (
@@ -1134,6 +1152,13 @@ export const ItineraryTab: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateCity} noValidate className="space-y-4 mt-4">
+              {cityError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-2xl flex items-center gap-2">
+                  <span className="text-base">⚠️</span>
+                  <span>{cityError}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
                   Nombre de la Ciudad / Parada *
@@ -1147,7 +1172,9 @@ export const ItineraryTab: React.FC = () => {
                     setCityForm({ ...cityForm, name: e.target.value });
                     if (cityError) setCityError(null);
                   }}
-                  className="w-full text-sm p-3 border border-[#D9D1B9] rounded-2xl bg-white font-bold text-[#434338] focus:outline-[#5A5A40]"
+                  className={`w-full text-sm p-3 border rounded-2xl bg-white font-bold text-[#434338] focus:outline-[#5A5A40] ${
+                    cityError ? 'border-red-500 ring-2 ring-red-100' : 'border-[#D9D1B9]'
+                  }`}
                 />
               </div>
 
@@ -1248,6 +1275,12 @@ export const ItineraryTab: React.FC = () => {
                 />
               </div>
 
+              {cityError && (
+                <p className="text-xs text-red-600 font-semibold text-right">
+                  ⚠️ {cityError}
+                </p>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EFEDE7]">
                 <button
                   type="button"
@@ -1255,14 +1288,14 @@ export const ItineraryTab: React.FC = () => {
                     setCityError(null);
                     setIsAddCityOpen(false);
                   }}
-                  className="px-4 py-2.5 text-xs font-bold text-[#737260] hover:bg-[#E9E5D9] rounded-2xl cursor-pointer"
+                  className="px-4 py-2.5 text-xs font-bold text-[#737260] hover:bg-[#E9E5D9] rounded-2xl cursor-pointer min-h-[44px]"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="button"
-                  onClick={() => handleCreateCity()}
-                  className="px-6 py-3 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-2xl cursor-pointer shadow-md shadow-[#5A5A40]/15 active:scale-95 transition-transform flex items-center gap-2"
+                  type="submit"
+                  id="btn-submit-create-city"
+                  className="px-6 py-3 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-2xl cursor-pointer shadow-md shadow-[#5A5A40]/15 active:scale-95 transition-transform flex items-center gap-2 min-h-[44px]"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Crear Destino</span>

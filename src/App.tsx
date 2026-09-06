@@ -57,7 +57,7 @@ const MainTripApp: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F2ED] text-[#434338] flex flex-col font-sans selection:bg-[#D4A373] selection:text-white pb-24 sm:pb-20">
+    <div className="min-h-screen bg-[#F5F2ED] text-[#434338] flex flex-col font-sans selection:bg-[#D4A373] selection:text-white pb-36 sm:pb-28">
       {/* Sticky Main Navigation */}
       <Navbar
         onOpenNewTripModal={() => setIsNewTripOpen(true)}
@@ -69,6 +69,8 @@ const MainTripApp: React.FC = () => {
       {/* Countdown & Hero Header */}
       <CountdownHeader
         onOpenEditTripModal={() => setIsEditTripOpen(true)}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
       />
 
       {/* Main Workspace Tabs Container */}
