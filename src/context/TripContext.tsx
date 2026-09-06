@@ -145,25 +145,33 @@ export const encodeTripData = (obj: unknown): string => {
 export const decodeTripData = (raw: string): Trip | null => {
   try {
     if (!raw) return null;
-    let clean = raw.trim();
+    let b64 = '';
 
-    // If string has a data= parameter or hash
-    if (clean.includes('data=')) {
-      const match = clean.match(/[#?&]data=([^&]+)/);
-      if (match && match[1]) clean = match[1];
+    // If string has a data= parameter or hash (e.g. #data=... or ?data=...)
+    // Ensure we capture only valid base64 chars and stop at whitespace, newlines, quotes, or other query params
+    const dataMatch = raw.match(/[#?&]data=([A-Za-z0-9_=-]+)/);
+    if (dataMatch && dataMatch[1]) {
+      b64 = dataMatch[1];
+    } else {
+      // Check if the input itself is a raw base64 string
+      const trimmed = raw.trim().replace(/^"/, '').replace(/"$/, '');
+      const pureMatch = trimmed.match(/^[A-Za-z0-9_=-]{20,}$/);
+      if (pureMatch) {
+        b64 = pureMatch[0];
+      }
     }
 
-    clean = clean.replace(/^[#?&]?data=/, '').replace(/^"/, '').replace(/"$/, '').trim();
+    if (!b64) return null;
 
     // Decode URL-encoded characters (like %3D, %2B, %2F)
     try {
-      clean = decodeURIComponent(clean);
+      b64 = decodeURIComponent(b64);
     } catch {
       // ignore
     }
 
     // Convert URL-safe base64 (- and _) to standard (+ and /)
-    let b64 = clean.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
+    b64 = b64.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
 
     // Pad with = if length is not a multiple of 4
     while (b64.length % 4 !== 0) {
@@ -196,7 +204,7 @@ export const parseJoinInput = (input: string): ParsedJoinResult => {
   if (!input) return {};
   const trimmed = input.trim();
 
-  // 1. Try decoding embedded trip data first (if input or URL has #data= or ?data=)
+  // 1. Try decoding embedded trip data first (#data= or raw base64 anywhere in text)
   const decodedTrip = decodeTripData(trimmed);
   if (decodedTrip && (decodedTrip.id || decodedTrip.title)) {
     return {
@@ -205,51 +213,69 @@ export const parseJoinInput = (input: string): ParsedJoinResult => {
     };
   }
 
-  // 2. If it is a full URL, extract origin and join/code query parameter
+  // 2. Extract remoteOrigin if any URL exists anywhere in the input text
   let remoteOrigin: string | undefined;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+  const urlMatch = trimmed.match(/https?:\/\/[^\s"'<>\n\r]+/i);
+  if (urlMatch) {
     try {
-      const parsedUrl = new URL(trimmed);
+      const parsedUrl = new URL(urlMatch[0]);
       remoteOrigin = parsedUrl.origin;
     } catch {
       // ignore
     }
   }
 
+  // 3. Check for join / code query parameters in the text or URL
   const urlParamMatch = trimmed.match(/[?&](?:join|code|trip|tripCode)=([A-Za-z0-9_-]+)/i);
   if (urlParamMatch && urlParamMatch[1]) {
     return { code: urlParamMatch[1].trim(), remoteOrigin };
   }
 
-  // 3. If it contains "código: XXXX" or "codigo: XXXX" or "código es: XXXX"
+  // 4. Check for WhatsApp / message patterns like "código: XXXX", "codigo: XXXX", "código es: XXXX"
   const textCodeMatch = trimmed.match(/(?:c[oó]digo|code)(?:\s+es)?[:\s]+([A-Za-z0-9_-]+)/i);
   if (textCodeMatch && textCodeMatch[1]) {
     return { code: textCodeMatch[1].trim(), remoteOrigin };
   }
 
-  // 4. Fallback: clean string
+  // 5. Fallback: clean string
   const cleanCode = trimmed.replace(/^[#?]/, '').trim();
   return { code: cleanCode, remoteOrigin };
 };
 
+const CLOUD_CHUNK_SIZE = 120;
+
 export const saveTripToCloud = async (tripToSave: Trip): Promise<boolean> => {
   try {
     const cleanCode = (tripToSave.inviteCode || tripToSave.id).toUpperCase().replace(/\s+/g, '');
-    const b64 = encodeTripData(tripToSave);
+    const sanitized = sanitizeTripForSharing(tripToSave);
+    const b64 = encodeTripData(sanitized);
     if (!b64) return false;
 
-    // Save under trip invite code for 1-click partner join
-    fetch(
-      `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanCode)}/${encodeURIComponent(b64)}`,
-      { method: 'POST', headers: { 'Content-Length': '0' } }
-    ).catch(() => {});
-
-    // Also save under trip.id if different
+    const numChunks = Math.ceil(b64.length / CLOUD_CHUNK_SIZE);
+    const keysToSave = [cleanCode];
     if (tripToSave.id && tripToSave.id.toUpperCase() !== cleanCode) {
+      keysToSave.push(tripToSave.id.toUpperCase());
+    }
+    const digitsOnly = cleanCode.replace(/\D/g, '');
+    if (digitsOnly.length >= 3 && digitsOnly !== cleanCode) {
+      keysToSave.push(digitsOnly);
+    }
+
+    for (const key of keysToSave) {
+      // Save chunk count
       fetch(
-        `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(tripToSave.id.toUpperCase())}/${encodeURIComponent(b64)}`,
+        `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(key)}_count/${numChunks}`,
         { method: 'POST', headers: { 'Content-Length': '0' } }
       ).catch(() => {});
+
+      // Save each chunk (safe within URL character limit)
+      for (let i = 0; i < numChunks; i++) {
+        const chunk = b64.slice(i * CLOUD_CHUNK_SIZE, (i + 1) * CLOUD_CHUNK_SIZE);
+        fetch(
+          `https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(key)}_${i}/${encodeURIComponent(chunk)}`,
+          { method: 'POST', headers: { 'Content-Length': '0' } }
+        ).catch(() => {});
+      }
     }
     return true;
   } catch {
@@ -259,15 +285,37 @@ export const saveTripToCloud = async (tripToSave: Trip): Promise<boolean> => {
 
 export const fetchTripFromCloud = async (code: string): Promise<Trip | null> => {
   try {
-    const cleanCode = code.toUpperCase().replace(/\s+/g, '');
-    const res = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanCode)}`);
-    if (!res.ok) return null;
-    const rawVal = await res.text();
-    if (!rawVal || rawVal === 'null' || rawVal === '""') return null;
+    if (!code) return null;
+    const cleanKey = code.toUpperCase().replace(/\s+/g, '').replace(/^[#?]/, '');
 
-    const unquoted = rawVal.replace(/^"/, '').replace(/"$/, '');
-    const decoded = decodeTripData(unquoted);
-    if (decoded && decoded.id) {
+    // Fetch chunk count
+    const countRes = await fetch(
+      `https://keyvalue.immanuel.co/api/KeyVal/GetValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanKey)}_count`
+    );
+    if (!countRes.ok) return null;
+    const countText = (await countRes.text()).replace(/^"/, '').replace(/"$/, '').trim();
+    const count = parseInt(countText, 10);
+    if (!count || isNaN(count) || count <= 0 || count > 50) return null;
+
+    // Fetch chunks in parallel
+    const chunkPromises = [];
+    for (let i = 0; i < count; i++) {
+      chunkPromises.push(
+        fetch(
+          `https://keyvalue.immanuel.co/api/KeyVal/GetValue/${CLOUD_SYNC_BUCKET}/${encodeURIComponent(cleanKey)}_${i}`
+        )
+          .then(res => res.text())
+          .then(txt => decodeURIComponent(txt.replace(/^"/, '').replace(/"$/, '')))
+          .catch(() => '')
+      );
+    }
+
+    const chunks = await Promise.all(chunkPromises);
+    const fullB64 = chunks.join('');
+    if (!fullB64) return null;
+
+    const decoded = decodeTripData(fullB64);
+    if (decoded && (decoded.id || decoded.title)) {
       return ensureTripIntegrity(decoded);
     }
     return null;
@@ -566,35 +614,21 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // 1. Direct base64 hash transfer (instant, 100% reliable on WhatsApp/Safari/Chrome)
-    const hash = window.location.hash;
-    if (hash && (hash.startsWith('#data=') || hash.includes('data='))) {
-      const rawData = hash.replace(/^#data=/, '').replace(/^#.*data=/, '');
-      const decoded = decodeTripData(rawData);
-      if (decoded && decoded.id) {
-        const sanitized = ensureTripIntegrity(decoded);
-        setTrip(sanitized);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-        saveTripToCloud(sanitized);
-        // Clean URL hash without reloading
-        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
-        return;
-      }
-    }
-
-    // 2. Query parameter join code (e.g. ?join=VIAJE-1234 or ?trip=VIAJE-1234)
+    const href = window.location.href;
     const urlParams = new URLSearchParams(window.location.search);
-    const joinCode = urlParams.get('join') || urlParams.get('trip') || urlParams.get('tripCode') || urlParams.get('code');
-    
-    if (joinCode && joinCode.trim().length > 0) {
-      const code = joinCode.trim();
-      joinTripByCode(code).then(success => {
+    const joinCode =
+      urlParams.get('join') ||
+      urlParams.get('trip') ||
+      urlParams.get('tripCode') ||
+      urlParams.get('code');
+    const hash = window.location.hash;
+    const hasData = hash && hash.includes('data=');
+
+    if (hasData || (joinCode && joinCode.trim().length > 0)) {
+      joinTripByCode(href).then(success => {
         if (success) {
           // Clean URL without reloading
-          const cleanUrl = window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
+          window.history.replaceState({}, document.title, window.location.pathname);
         }
       });
     }
@@ -814,80 +848,81 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanUpper = cleanCode.toUpperCase().replace(/\s+/g, '');
     const digitsOnly = cleanCode.replace(/\D/g, '');
 
-    // Step B: Query Remote Origin if input was a full URL from another preview container
-    if (parsed.remoteOrigin && parsed.remoteOrigin !== window.location.origin) {
-      try {
-        const remoteRes = await fetch(`${parsed.remoteOrigin}/api/trips/${encodeURIComponent(cleanCode)}`);
-        if (remoteRes.ok) {
-          const foundRemote = await remoteRes.json();
-          if (foundRemote && (foundRemote.id || foundRemote.title)) {
-            const sanitized = ensureTripIntegrity(foundRemote);
-            setTrip(sanitized);
-            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-            broadcastTripChange(sanitized);
-
-            // Re-save to local server as well
-            fetch(`/api/trips/${sanitized.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(sanitized),
-            }).catch(() => {});
-
-            return true;
-          }
-        }
-      } catch {
-        // remote host fetch failed
-      }
-    }
-
-    // Step C: Query Global Cloud KV
+    // Step B: Query Global Cloud KV (works across different phones/browsers without shared server)
     try {
-      const cloudTrip = await fetchTripFromCloud(cleanUpper);
-      if (cloudTrip && cloudTrip.id) {
-        const sanitized = ensureTripIntegrity(cloudTrip);
-        setTrip(sanitized);
-        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-        broadcastTripChange(sanitized);
-        return true;
+      const cloudCodesToTry = [cleanUpper];
+      if (digitsOnly && digitsOnly.length >= 3 && digitsOnly !== cleanUpper) {
+        cloudCodesToTry.push(digitsOnly);
       }
-    } catch {
-      // cloud fetch failed or offline
-    }
-
-    // Step D: Query Server container
-    try {
-      // Try exact code or clean code
-      const endpointsToTry = [`/api/trips/${encodeURIComponent(cleanCode)}`];
-      if (digitsOnly && digitsOnly.length >= 3 && digitsOnly !== cleanCode) {
-        endpointsToTry.push(`/api/trips/${encodeURIComponent(digitsOnly)}`);
-      }
-
-      for (const endpoint of endpointsToTry) {
-        const res = await fetch(endpoint);
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const foundTrip = await res.json();
-          if (foundTrip && (foundTrip.id || foundTrip.title)) {
-            const sanitized = ensureTripIntegrity(foundTrip);
-            setTrip(sanitized);
-            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-            broadcastTripChange(sanitized);
-            return true;
-          }
+      for (const cCode of cloudCodesToTry) {
+        const cloudTrip = await fetchTripFromCloud(cCode);
+        if (cloudTrip && (cloudTrip.id || cloudTrip.title)) {
+          const sanitized = ensureTripIntegrity(cloudTrip);
+          setTrip(sanitized);
+          setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+          localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+          broadcastTripChange(sanitized);
+          return true;
         }
       }
     } catch {
-      // offline lookup
+      // cloud fetch error
     }
 
-    // Step E: Fallback to local trips list or demo trip
+    // Step C: Query Server endpoints (current container, remote container from URL, and sibling dev/pre container)
+    const originsToTry = new Set<string>();
+    if (typeof window !== 'undefined' && window.location.origin) {
+      originsToTry.add(window.location.origin);
+      if (window.location.origin.includes('-dev-')) {
+        originsToTry.add(window.location.origin.replace('-dev-', '-pre-'));
+      }
+      if (window.location.origin.includes('-pre-')) {
+        originsToTry.add(window.location.origin.replace('-pre-', '-dev-'));
+      }
+    }
+    if (parsed.remoteOrigin) {
+      originsToTry.add(parsed.remoteOrigin);
+    }
+
+    const queriesToTry = [cleanCode];
+    if (cleanUpper !== cleanCode) queriesToTry.push(cleanUpper);
+    if (digitsOnly && digitsOnly.length >= 3 && digitsOnly !== cleanCode) queriesToTry.push(digitsOnly);
+
+    for (const origin of originsToTry) {
+      for (const q of queriesToTry) {
+        try {
+          const res = await fetch(`${origin}/api/trips/${encodeURIComponent(q)}`);
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            const foundTrip = await res.json();
+            if (foundTrip && (foundTrip.id || foundTrip.title)) {
+              const sanitized = ensureTripIntegrity(foundTrip);
+              setTrip(sanitized);
+              setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+              localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+              localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+              broadcastTripChange(sanitized);
+
+              // Re-save to local server as well if from remote container
+              if (origin !== window.location.origin) {
+                fetch(`/api/trips/${sanitized.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(sanitized),
+                }).catch(() => {});
+              }
+
+              return true;
+            }
+          }
+        } catch {
+          // fetch error
+        }
+      }
+    }
+
+    // Step D: Fallback to local trips list or demo trip
     const candidates = [...tripsList, trip, demoTripTemplate];
     const local = candidates.find(t => {
       if (!t) return false;
@@ -899,7 +934,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tId === cleanUpper ||
         tCode === cleanUpper ||
         tCode.replace(/-/g, '') === cleanUpper.replace(/-/g, '') ||
-        (digitsOnly.length >= 3 && tDigits === digitsOnly)
+        (digitsOnly.length >= 3 && tDigits === digitsOnly) ||
+        (t.title && t.title.toLowerCase().trim() === cleanCode.toLowerCase())
       );
     });
 

@@ -177,126 +177,147 @@ export const ItineraryTab: React.FC = () => {
 
   const handleCreateTransport = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transForm.title.trim()) return;
+    const title = (transForm.title || '').trim();
+    if (!title) return;
 
-    addTransport({
-      type: transForm.type,
-      title: transForm.title.trim(),
-      operator: transForm.operator.trim(),
-      bookingReference: transForm.bookingReference.trim(),
-      departurePlace: transForm.departurePlace.trim(),
-      arrivalPlace: transForm.arrivalPlace.trim(),
-      departureDateTime: transForm.departureDateTime || new Date().toISOString(),
-      arrivalDateTime: transForm.arrivalDateTime || new Date().toISOString(),
-      flightNumber: transForm.flightNumber.trim() || undefined,
-      terminal: transForm.terminal.trim() || undefined,
-      gate: transForm.gate.trim() || undefined,
-      seatPartner1: transForm.seatPartner1.trim() || undefined,
-      seatPartner2: transForm.seatPartner2.trim() || undefined,
-      baggageNotes: transForm.baggageNotes.trim() || undefined,
-      notes: transForm.notes.trim() || undefined,
-      status: transForm.status,
-      directLinkOrTicket: transForm.directLinkOrTicket.trim() || undefined,
-    });
-    setIsAddTransportOpen(false);
+    try {
+      addTransport({
+        type: transForm.type,
+        title,
+        operator: (transForm.operator || '').trim(),
+        bookingReference: (transForm.bookingReference || '').trim(),
+        departurePlace: (transForm.departurePlace || '').trim(),
+        arrivalPlace: (transForm.arrivalPlace || '').trim(),
+        departureDateTime: transForm.departureDateTime || new Date().toISOString(),
+        arrivalDateTime: transForm.arrivalDateTime || new Date().toISOString(),
+        flightNumber: (transForm.flightNumber || '').trim() || undefined,
+        terminal: (transForm.terminal || '').trim() || undefined,
+        gate: (transForm.gate || '').trim() || undefined,
+        seatPartner1: (transForm.seatPartner1 || '').trim() || undefined,
+        seatPartner2: (transForm.seatPartner2 || '').trim() || undefined,
+        baggageNotes: (transForm.baggageNotes || '').trim() || undefined,
+        notes: (transForm.notes || '').trim() || undefined,
+        status: transForm.status,
+        directLinkOrTicket: (transForm.directLinkOrTicket || '').trim() || undefined,
+      });
+      setIsAddTransportOpen(false);
+    } catch (err) {
+      console.error('Error creating transport:', err);
+    }
   };
 
   const handleCreateCity = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setCityError(null);
-    if (!cityForm.name || !cityForm.name.trim()) {
+
+    const rawName = (cityForm.name || '').trim();
+    if (!rawName) {
       setCityError('Por favor escribe o selecciona el nombre de la ciudad o destino');
       return;
     }
 
-    const cityName = cityForm.name.trim();
+    const cityName = rawName;
+    const country = (cityForm.country || '').trim() || 'Destino';
     const arrival = cityForm.arrivalDate || trip.startDate || new Date().toISOString().split('T')[0];
     const departure = cityForm.departureDate || trip.endDate || arrival;
+    const coverImage =
+      (cityForm.coverImage || '').trim() ||
+      'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=1000&q=80';
+    const googleMapsUrl =
+      (cityForm.googleMapsUrl || '').trim() ||
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cityName + ' ' + country)}`;
 
-    addCity({
-      name: cityName,
-      country: cityForm.country.trim() || 'Destino',
-      arrivalDate: arrival,
-      departureDate: departure,
-      coverImage:
-        cityForm.coverImage.trim() ||
-        'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=1000&q=80',
-      googleMapsUrl:
-        cityForm.googleMapsUrl.trim() ||
-        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cityName + ' ' + (cityForm.country || ''))}`,
-      emergencyInfo: {
-        police: cityForm.police || '112',
-        medical: cityForm.medical || '118',
-        embassy: cityForm.embassy || 'Consulado General',
-      },
-      practicalTips: {
-        weather: cityForm.weather || 'Clima agradable',
-        plugs: cityForm.plugs || 'Tipo C/F (230V)',
-        transport: cityForm.transport || 'Metro, autobuses y caminar',
-        localCurrency: cityForm.localCurrency || trip.currency,
-        safety: cityForm.safety || 'Zona turística segura',
-      },
-      dayPlans: [
-        {
-          id: 'plan-d1-' + Date.now().toString(36),
-          date: arrival,
-          dayNumber: 1,
-          title: `Llegada a ${cityName}`,
-          morningActivities: ['Check-in y acomodar equipaje'],
-          afternoonActivities: ['Paseo exploratorio y café'],
-          eveningActivities: ['Cena de bienvenida'],
-          notes: 'Día de llegada',
+    try {
+      addCity({
+        name: cityName,
+        country,
+        arrivalDate: arrival,
+        departureDate: departure,
+        coverImage,
+        googleMapsUrl,
+        emergencyInfo: {
+          police: cityForm.police || '112',
+          medical: cityForm.medical || '118',
+          embassy: cityForm.embassy || 'Consulado General',
         },
-      ],
-    });
+        practicalTips: {
+          weather: cityForm.weather || 'Clima agradable',
+          plugs: cityForm.plugs || 'Tipo C/F (230V)',
+          transport: cityForm.transport || 'Metro, autobuses y caminar',
+          localCurrency: cityForm.localCurrency || trip.currency,
+          safety: cityForm.safety || 'Zona turística segura',
+        },
+        dayPlans: [
+          {
+            id: 'plan-d1-' + Date.now().toString(36),
+            date: arrival,
+            dayNumber: 1,
+            title: `Llegada a ${cityName}`,
+            morningActivities: ['Check-in y acomodar equipaje'],
+            afternoonActivities: ['Paseo exploratorio y café'],
+            eveningActivities: ['Cena de bienvenida'],
+            notes: 'Día de llegada',
+          },
+        ],
+      });
 
-    setIsAddCityOpen(false);
-    setCityError(null);
-    setCitySuccess(`¡Destino "${cityName}" agregado con éxito!`);
-    setTimeout(() => setCitySuccess(null), 4000);
-    setCityForm({
-      name: '',
-      country: '',
-      arrivalDate: '',
-      departureDate: '',
-      coverImage: '',
-      googleMapsUrl: '',
-      police: '112',
-      medical: '118',
-      embassy: '',
-      weather: '',
-      plugs: 'Tipo C/F (230V)',
-      transport: '',
-      localCurrency: trip.currency,
-      safety: 'Zona turística segura',
-    });
+      setIsAddCityOpen(false);
+      setCityError(null);
+      setCitySuccess(`¡Destino "${cityName}" agregado con éxito!`);
+      setTimeout(() => setCitySuccess(null), 4000);
+      setCityForm({
+        name: '',
+        country: '',
+        arrivalDate: '',
+        departureDate: '',
+        coverImage: '',
+        googleMapsUrl: '',
+        police: '112',
+        medical: '118',
+        embassy: '',
+        weather: '',
+        plugs: 'Tipo C/F (230V)',
+        transport: '',
+        localCurrency: trip.currency,
+        safety: 'Zona turística segura',
+      });
+    } catch (err: any) {
+      console.error('Error creating city:', err);
+      setCityError(err?.message || 'Hubo un error al agregar el destino. Por favor intenta de nuevo.');
+    }
   };
 
   const handleCreateAccommodation = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!accForm.name.trim()) return;
+    const name = (accForm.name || '').trim();
+    if (!name) return;
 
-    addAccommodation({
-      cityId: accForm.cityId || trip.cities[0]?.id || 'city-1',
-      name: accForm.name.trim(),
-      address: accForm.address.trim(),
-      checkInDate: accForm.checkInDate || trip.startDate,
-      checkInTime: accForm.checkInTime,
-      checkOutDate: accForm.checkOutDate || trip.endDate,
-      checkOutTime: accForm.checkOutTime,
-      bookingCode: accForm.bookingCode.trim(),
-      contactPhone: accForm.contactPhone.trim(),
-      totalCost: Number(accForm.totalCost) || 0,
-      currency: trip.currency,
-      status: 'pagado',
-      googleMapsUrl:
-        accForm.googleMapsUrl.trim() ||
-        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(accForm.name + ' ' + accForm.address)}`,
-      photoUrl: accForm.photoUrl.trim() || undefined,
-      notes: accForm.notes.trim() || undefined,
-      roomType: accForm.roomType.trim() || undefined,
-    });
-    setIsAddAccOpen(false);
+    try {
+      const address = (accForm.address || '').trim();
+      addAccommodation({
+        cityId: accForm.cityId || trip.cities[0]?.id || 'city-1',
+        name,
+        address,
+        checkInDate: accForm.checkInDate || trip.startDate,
+        checkInTime: accForm.checkInTime,
+        checkOutDate: accForm.checkOutDate || trip.endDate,
+        checkOutTime: accForm.checkOutTime,
+        bookingCode: (accForm.bookingCode || '').trim(),
+        contactPhone: (accForm.contactPhone || '').trim(),
+        totalCost: Number(accForm.totalCost) || 0,
+        currency: trip.currency,
+        status: 'pagado',
+        googleMapsUrl:
+          (accForm.googleMapsUrl || '').trim() ||
+          `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`,
+        photoUrl: (accForm.photoUrl || '').trim() || undefined,
+        notes: (accForm.notes || '').trim() || undefined,
+        roomType: (accForm.roomType || '').trim() || undefined,
+      });
+      setIsAddAccOpen(false);
+    } catch (err) {
+      console.error('Error creating accommodation:', err);
+    }
   };
 
   const formatDateTime = (dtStr: string) => {
@@ -342,6 +363,7 @@ export const ItineraryTab: React.FC = () => {
                 arrivalDate: trip.startDate,
                 departureDate: trip.endDate,
                 coverImage: '',
+                googleMapsUrl: '',
                 police: '112',
                 medical: '118',
                 embassy: '',

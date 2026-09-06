@@ -80,12 +80,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
       urlParams.get('trip') ||
       urlParams.get('tripCode');
 
-    const hasData = hash && (hash.includes('data=') || hash.startsWith('#data='));
+    const hasData = hash && hash.includes('data=');
 
     if (queryCode || hasData) {
       setIsJoining(true);
-      const query = hasData ? hash : (queryCode || '');
-      joinTripByCode(query).then(success => {
+      joinTripByCode(window.location.href).then(success => {
         setIsJoining(false);
         if (success) {
           setMode('select-identity');
