@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useTrip } from '../context/TripContext';
+import React, { useState, useEffect } from 'react';
+import { useTrip, parseJoinInput } from '../context/TripContext';
 import {
   Heart,
   Compass,
@@ -12,6 +12,8 @@ import {
   KeyRound,
   Check,
   Plane,
+  Link2,
+  Clipboard,
 } from 'lucide-react';
 import { PartnerId, Trip } from '../types';
 
@@ -66,6 +68,46 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
   const [joinError, setJoinError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
 
+  // Auto-detect deep links on mount (?join=... or #data=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    const queryCode =
+      urlParams.get('join') ||
+      urlParams.get('code') ||
+      urlParams.get('trip') ||
+      urlParams.get('tripCode');
+
+    const hasData = hash && (hash.includes('data=') || hash.startsWith('#data='));
+
+    if (queryCode || hasData) {
+      setIsJoining(true);
+      const query = hasData ? hash : (queryCode || '');
+      joinTripByCode(query).then(success => {
+        setIsJoining(false);
+        if (success) {
+          setMode('select-identity');
+        }
+      });
+    }
+  }, []);
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          setJoinCodeInput(text.trim());
+          setJoinError('');
+        }
+      }
+    } catch {
+      // clipboard access denied or not supported
+    }
+  };
+
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -99,22 +141,23 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
 
   const handleJoinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinCodeInput.trim()) return;
+    const raw = joinCodeInput.trim();
+    if (!raw) return;
 
     setIsJoining(true);
     setJoinError('');
     try {
-      const success = await joinTripByCode(joinCodeInput.trim());
+      const success = await joinTripByCode(raw);
       setIsJoining(false);
 
       if (success) {
         setMode('select-identity');
       } else {
-        setJoinError('No encontramos ningún viaje con ese código o enlace. Verifícalo e inténtalo de nuevo.');
+        setJoinError('No pudimos conectar con ese enlace o código. Asegurate de copiar el link completo que te mandaron por WhatsApp o ingresar el código (ej: VIAJE-1234).');
       }
     } catch {
       setIsJoining(false);
-      setJoinError('Error al conectar. Verifica el código e intenta nuevamente.');
+      setJoinError('Error al conectar. Verifica el enlace e intenta nuevamente.');
     }
   };
 
@@ -138,6 +181,21 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
 
         {/* 1. INITIAL WELCOME SELECTION */}
         {mode === 'welcome' && (
+          isJoining ? (
+            <div className="py-12 text-center space-y-4 animate-in fade-in">
+              <div className="w-16 h-16 rounded-3xl bg-[#E9EDC6] text-[#5A5A40] flex items-center justify-center mx-auto shadow-md">
+                <Plane className="w-8 h-8 animate-pulse text-[#5A5A40]" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-serif font-bold text-[#434338]">
+                  Conectando al viaje compartido...
+                </h2>
+                <p className="text-xs text-[#737260]">
+                  Cargando itinerario y preparando tu perfil de viajero...
+                </p>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-6 text-center animate-in fade-in">
             <div className="mx-auto w-16 h-16 rounded-3xl bg-[#5A5A40] text-white flex items-center justify-center shadow-lg shadow-[#5A5A40]/20 mb-2">
               <Compass className="w-8 h-8" />
@@ -231,6 +289,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
               </label>
             </div>
           </div>
+          )
         )}
 
         {/* 2. FORM TO CREATE NEW TRIP */}
@@ -430,7 +489,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
           </form>
         )}
 
-        {/* 3. JOIN WITH CODE */}
+        {/* 3. JOIN WITH CODE OR LINK */}
         {mode === 'join' && (
           <form onSubmit={handleJoinSubmit} className="space-y-5 animate-in fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#EFEDE7]">
@@ -443,50 +502,73 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
                     Unirme al Viaje de mi Pareja
                   </h2>
                   <p className="text-xs text-[#737260]">
-                    Ingresa el código compartido por tu compañero/a
+                    Pega el enlace de WhatsApp o ingresa el código del viaje
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setMode('welcome')}
-                className="text-xs text-[#8C8B79] hover:text-[#434338] font-bold"
+                className="text-xs text-[#8C8B79] hover:text-[#434338] font-bold cursor-pointer"
               >
                 Volver
               </button>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase text-[#434338]">
-                Código de Viaje (ej: VIAJE-1234)
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ingresar código..."
-                value={joinCodeInput}
-                onChange={e => setJoinCodeInput(e.target.value.toUpperCase())}
-                className="w-full text-center text-lg uppercase font-mono font-black p-3.5 rounded-2xl border-2 border-[#D9D1B9] bg-white text-[#434338] tracking-widest focus:outline-[#5A5A40]"
-              />
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold uppercase text-[#434338]">
+                  Enlace o Código de Viaje
+                </label>
+                <button
+                  type="button"
+                  onClick={handlePasteFromClipboard}
+                  className="text-xs font-semibold text-[#5A5A40] hover:text-[#434338] flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Clipboard className="w-3.5 h-3.5" />
+                  Pegar enlace
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  placeholder="Pega el link completo o código (ej: VIAJE-1234)"
+                  value={joinCodeInput}
+                  onChange={e => {
+                    setJoinCodeInput(e.target.value);
+                    if (joinError) setJoinError('');
+                  }}
+                  className="w-full text-center text-sm sm:text-base font-mono font-medium p-3.5 rounded-2xl border-2 border-[#D9D1B9] bg-white text-[#434338] focus:outline-[#5A5A40]"
+                />
+              </div>
+
               {joinError && (
-                <p className="text-xs text-red-600 font-semibold mt-1">{joinError}</p>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                  {joinError}
+                </div>
               )}
+
+              <p className="text-[11px] text-[#737260] text-center">
+                💡 Podés pegar directamente el mensaje o link que te enviaron por WhatsApp (ej: https://.../?join=VIAJE-1234) o solo el código.
+              </p>
             </div>
 
             <div className="flex justify-between items-center pt-3 border-t border-[#EFEDE7]">
               <button
                 type="button"
                 onClick={() => setMode('welcome')}
-                className="px-4 py-2 text-xs font-bold text-[#737260] hover:bg-[#E9E5D9] rounded-2xl"
+                className="px-4 py-2 text-xs font-bold text-[#737260] hover:bg-[#E9E5D9] rounded-2xl cursor-pointer"
               >
                 Atrás
               </button>
               <button
                 type="submit"
-                disabled={isJoining}
-                className="px-6 py-2.5 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-2xl shadow-md shadow-[#5A5A40]/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                disabled={isJoining || !joinCodeInput.trim()}
+                className="px-6 py-2.5 text-xs font-bold text-white bg-[#5A5A40] hover:bg-[#434338] rounded-2xl shadow-md shadow-[#5A5A40]/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
               >
-                {isJoining ? 'Buscando viaje...' : 'Unirme y Elegir quién soy'}
+                {isJoining ? 'Conectando al viaje...' : 'Unirme y Elegir quién soy'}
               </button>
             </div>
           </form>
@@ -500,11 +582,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
             </div>
 
             <div className="space-y-1">
-              <h2 className="text-xl font-serif font-bold text-[#434338]">
-                ¡Casi listos! ¿Quién sos vos?
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#5A5A40] bg-[#E9EDC6] px-3 py-1 rounded-full">
+                ¡Viaje vinculado exitosamente!
+              </span>
+              <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#434338] pt-1">
+                {currentActiveTrip?.title || 'Nuestro Viaje'}
               </h2>
-              <p className="text-xs text-[#737260]">
-                Elegí tu nombre para guardar tus actividades, gastos y maleta en este dispositivo.
+              <p className="text-xs text-[#737260] max-w-sm mx-auto">
+                ¿Quién sos vos en este teléfono? Elegí tu perfil para sincronizar en tiempo real:
               </p>
             </div>
 

@@ -39,7 +39,7 @@ const MainTripApp: React.FC = () => {
     if (hasTrip && showWelcome && localStorage.getItem('parejas_en_ruta_trip_ready')) {
       setShowWelcome(false);
     }
-  }, [hasTrip]);
+  }, [hasTrip, showWelcome, trip]);
 
   if (showWelcome || !hasTrip) {
     return (

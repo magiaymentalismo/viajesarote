@@ -97,6 +97,36 @@ const LOCAL_STORAGE_TRIPS_LIST = 'parejas_en_ruta_trips_list_v2';
 const LOCAL_STORAGE_PARTNER = 'parejas_en_ruta_partner_id';
 const CLOUD_SYNC_BUCKET = 'parejas_en_ruta_v2';
 
+export const sanitizeTripForSharing = (t: Trip): Partial<Trip> => {
+  return {
+    id: t.id,
+    title: t.title,
+    subtitle: t.subtitle,
+    coverImage: t.coverImage,
+    startDate: t.startDate,
+    endDate: t.endDate,
+    currency: t.currency,
+    partners: t.partners,
+    inviteCode: t.inviteCode,
+    createdAt: t.createdAt,
+    lastSyncedAt: t.lastSyncedAt,
+    cities: t.cities,
+    expenses: (t.expenses || []).map(e => ({
+      ...e,
+      // Strip out huge local base64 images so URL stays under WhatsApp limit
+      receiptImage: e.receiptImage && e.receiptImage.startsWith('data:') ? undefined : e.receiptImage,
+    })),
+    transports: t.transports,
+    accommodations: t.accommodations,
+    sites: t.sites,
+    packingList: t.packingList,
+    documents: t.documents,
+    tasks: t.tasks,
+    messages: t.messages,
+    gallery: (t.gallery || []).filter(g => g.mediaUrl && !g.mediaUrl.startsWith('data:')),
+  };
+};
+
 export const encodeTripData = (obj: unknown): string => {
   try {
     const json = JSON.stringify(obj);
@@ -105,26 +135,101 @@ export const encodeTripData = (obj: unknown): string => {
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
+    // Return standard base64 string
     return btoa(binary);
   } catch {
     return '';
   }
 };
 
-export const decodeTripData = (b64: string): Trip | null => {
+export const decodeTripData = (raw: string): Trip | null => {
   try {
-    const cleanB64 = b64.replace(/^#data=/, '').replace(/^data=/, '').replace(/^"/, '').replace(/"$/, '').trim();
-    if (!cleanB64) return null;
-    const binary = atob(cleanB64);
+    if (!raw) return null;
+    let clean = raw.trim();
+
+    // If string has a data= parameter or hash
+    if (clean.includes('data=')) {
+      const match = clean.match(/[#?&]data=([^&]+)/);
+      if (match && match[1]) clean = match[1];
+    }
+
+    clean = clean.replace(/^[#?&]?data=/, '').replace(/^"/, '').replace(/"$/, '').trim();
+
+    // Decode URL-encoded characters (like %3D, %2B, %2F)
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {
+      // ignore
+    }
+
+    // Convert URL-safe base64 (- and _) to standard (+ and /)
+    let b64 = clean.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
+
+    // Pad with = if length is not a multiple of 4
+    while (b64.length % 4 !== 0) {
+      b64 += '=';
+    }
+
+    const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
     const json = new TextDecoder().decode(bytes);
-    return JSON.parse(json);
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === 'object' && (parsed.id || parsed.title)) {
+      return ensureTripIntegrity(parsed);
+    }
+    return null;
   } catch {
     return null;
   }
+};
+
+export interface ParsedJoinResult {
+  code?: string;
+  directTrip?: Trip;
+  remoteOrigin?: string;
+}
+
+export const parseJoinInput = (input: string): ParsedJoinResult => {
+  if (!input) return {};
+  const trimmed = input.trim();
+
+  // 1. Try decoding embedded trip data first (if input or URL has #data= or ?data=)
+  const decodedTrip = decodeTripData(trimmed);
+  if (decodedTrip && (decodedTrip.id || decodedTrip.title)) {
+    return {
+      directTrip: decodedTrip,
+      code: decodedTrip.inviteCode || decodedTrip.id,
+    };
+  }
+
+  // 2. If it is a full URL, extract origin and join/code query parameter
+  let remoteOrigin: string | undefined;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsedUrl = new URL(trimmed);
+      remoteOrigin = parsedUrl.origin;
+    } catch {
+      // ignore
+    }
+  }
+
+  const urlParamMatch = trimmed.match(/[?&](?:join|code|trip|tripCode)=([A-Za-z0-9_-]+)/i);
+  if (urlParamMatch && urlParamMatch[1]) {
+    return { code: urlParamMatch[1].trim(), remoteOrigin };
+  }
+
+  // 3. If it contains "código: XXXX" or "codigo: XXXX" or "código es: XXXX"
+  const textCodeMatch = trimmed.match(/(?:c[oó]digo|code)(?:\s+es)?[:\s]+([A-Za-z0-9_-]+)/i);
+  if (textCodeMatch && textCodeMatch[1]) {
+    return { code: textCodeMatch[1].trim(), remoteOrigin };
+  }
+
+  // 4. Fallback: clean string
+  const cleanCode = trimmed.replace(/^[#?]/, '').trim();
+  return { code: cleanCode, remoteOrigin };
 };
 
 export const saveTripToCloud = async (tripToSave: Trip): Promise<boolean> => {
@@ -218,6 +323,21 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Load saved local cache or fallback to a clean empty trip
   const [trip, setTrip] = useState<Trip>(() => {
     try {
+      // Priority 1: Check URL hash for embedded trip data (#data=...)
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hash = window.location.hash;
+        if (hash.includes('data=') || hash.startsWith('#data=')) {
+          const directDecoded = decodeTripData(hash);
+          if (directDecoded && directDecoded.id) {
+            const sanitized = ensureTripIntegrity(directDecoded);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+            return sanitized;
+          }
+        }
+      }
+
+      // Priority 2: Check LocalStorage cache
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         return ensureTripIntegrity(JSON.parse(saved));
@@ -668,54 +788,62 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const input = rawCode ? rawCode.trim() : '';
     if (!input) return false;
 
-    // Step A: Check if input is a URL or snippet containing #data= or data= (instant 0-network load)
-    if (input.includes('#data=') || input.includes('data=')) {
-      const parts = input.split(/#data=|&data=|\?data=/);
-      if (parts[1]) {
-        const decoded = decodeTripData(parts[1]);
-        if (decoded && decoded.id) {
-          const sanitized = ensureTripIntegrity(decoded);
-          setTrip(sanitized);
-          setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-          localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-          broadcastTripChange(sanitized);
-          return true;
-        }
-      }
+    // Parse input (handles full URLs, embedded #data=, WhatsApp text, raw codes)
+    const parsed = parseJoinInput(input);
+
+    // Step A: Direct embedded trip data (instant, 100% reliable)
+    if (parsed.directTrip && (parsed.directTrip.id || parsed.directTrip.title)) {
+      const sanitized = ensureTripIntegrity(parsed.directTrip);
+      setTrip(sanitized);
+      setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+      localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+      broadcastTripChange(sanitized);
+
+      // Also persist to server in background
+      fetch(`/api/trips/${sanitized.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitized),
+      }).catch(() => {});
+
+      return true;
     }
 
-    // Step B: Check if input is a direct base64 JSON payload
-    if (input.length > 50 && !input.includes(' ')) {
-      const directDecoded = decodeTripData(input);
-      if (directDecoded && directDecoded.id) {
-        const sanitized = ensureTripIntegrity(directDecoded);
-        setTrip(sanitized);
-        setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-        localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-        broadcastTripChange(sanitized);
-        return true;
-      }
-    }
-
-    // Step C: If user pasted a full URL (e.g. https://.../?join=VIAJE-1234), extract clean code
-    let cleanCode = input;
-    if (cleanCode.includes('join=') || cleanCode.includes('code=')) {
-      try {
-        const match = cleanCode.match(/[?&](?:join|code)=([^&#]+)/);
-        if (match && match[1]) {
-          cleanCode = decodeURIComponent(match[1]);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    cleanCode = cleanCode.replace(/^#/, '').trim();
+    const cleanCode = (parsed.code || input).replace(/^[#?]/, '').trim();
     const cleanUpper = cleanCode.toUpperCase().replace(/\s+/g, '');
     const digitsOnly = cleanCode.replace(/\D/g, '');
 
-    // Step D: Query Global Cloud KV (works on Vercel and separate mobile devices)
+    // Step B: Query Remote Origin if input was a full URL from another preview container
+    if (parsed.remoteOrigin && parsed.remoteOrigin !== window.location.origin) {
+      try {
+        const remoteRes = await fetch(`${parsed.remoteOrigin}/api/trips/${encodeURIComponent(cleanCode)}`);
+        if (remoteRes.ok) {
+          const foundRemote = await remoteRes.json();
+          if (foundRemote && (foundRemote.id || foundRemote.title)) {
+            const sanitized = ensureTripIntegrity(foundRemote);
+            setTrip(sanitized);
+            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+            broadcastTripChange(sanitized);
+
+            // Re-save to local server as well
+            fetch(`/api/trips/${sanitized.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sanitized),
+            }).catch(() => {});
+
+            return true;
+          }
+        }
+      } catch {
+        // remote host fetch failed
+      }
+    }
+
+    // Step C: Query Global Cloud KV
     try {
       const cloudTrip = await fetchTripFromCloud(cleanUpper);
       if (cloudTrip && cloudTrip.id) {
@@ -731,27 +859,35 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // cloud fetch failed or offline
     }
 
-    // Step E: Query Server container if active
+    // Step D: Query Server container
     try {
-      const res = await fetch(`/api/trips/${encodeURIComponent(cleanCode)}`);
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const foundTrip = await res.json();
-        if (foundTrip && foundTrip.id) {
-          const sanitized = ensureTripIntegrity(foundTrip);
-          setTrip(sanitized);
-          setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
-          localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
-          broadcastTripChange(sanitized);
-          return true;
+      // Try exact code or clean code
+      const endpointsToTry = [`/api/trips/${encodeURIComponent(cleanCode)}`];
+      if (digitsOnly && digitsOnly.length >= 3 && digitsOnly !== cleanCode) {
+        endpointsToTry.push(`/api/trips/${encodeURIComponent(digitsOnly)}`);
+      }
+
+      for (const endpoint of endpointsToTry) {
+        const res = await fetch(endpoint);
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const foundTrip = await res.json();
+          if (foundTrip && (foundTrip.id || foundTrip.title)) {
+            const sanitized = ensureTripIntegrity(foundTrip);
+            setTrip(sanitized);
+            setTripsList(prev => [sanitized, ...prev.filter(t => t.id !== sanitized.id)]);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+            localStorage.setItem('parejas_en_ruta_trip_ready', 'true');
+            broadcastTripChange(sanitized);
+            return true;
+          }
         }
       }
     } catch {
-      // offline lookup in local list
+      // offline lookup
     }
 
-    // Step F: Fallback to local trips list or demo trip
+    // Step E: Fallback to local trips list or demo trip
     const candidates = [...tripsList, trip, demoTripTemplate];
     const local = candidates.find(t => {
       if (!t) return false;

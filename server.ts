@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { demoTripTemplate } from './src/initialData';
 import { Trip } from './src/types';
@@ -8,10 +9,62 @@ import { Trip } from './src/types';
 const app = express();
 const PORT = 3000;
 
+// Enable CORS for cross-origin mobile/preview requests
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-partner-id');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '20mb' }));
 
-// In-memory store
+// In-memory store + Disk persistence
 const tripsStore = new Map<string, Trip>();
+const DATA_FILE = path.join(process.cwd(), 'data', 'trips.json');
+
+function saveTripsToDisk() {
+  try {
+    const dir = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const uniqueTrips = new Map<string, Trip>();
+    tripsStore.forEach(t => {
+      if (t && t.id) uniqueTrips.set(t.id, t);
+    });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(Array.from(uniqueTrips.values()), null, 2));
+  } catch (err) {
+    console.error('Error saving trips to disk:', err);
+  }
+}
+
+function loadTripsFromDisk() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, 'utf8');
+      const list: Trip[] = JSON.parse(content);
+      if (Array.isArray(list)) {
+        list.forEach(t => {
+          if (t && t.id) {
+            tripsStore.set(t.id, t);
+            if (t.inviteCode) {
+              tripsStore.set(t.inviteCode.toUpperCase(), t);
+              const digits = t.inviteCode.replace(/\D/g, '');
+              if (digits) tripsStore.set(digits, t);
+            }
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error loading trips from disk:', err);
+  }
+}
+
+// Initial load
 if (demoTripTemplate) {
   tripsStore.set(demoTripTemplate.id, demoTripTemplate);
   if (demoTripTemplate.inviteCode) {
@@ -20,10 +73,19 @@ if (demoTripTemplate) {
     if (demoDigits) tripsStore.set(demoDigits, demoTripTemplate);
   }
 }
+loadTripsFromDisk();
 
 function findTripByQuery(query: string): Trip | undefined {
   if (!query) return undefined;
-  const clean = query.trim();
+  let clean = query.trim();
+
+  // If query is a URL or has query param e.g. join=VIAJE-1234 or code=VIAJE-1234
+  if (clean.includes('join=') || clean.includes('code=') || clean.includes('trip=')) {
+    const match = clean.match(/[?&](?:join|code|trip|tripCode)=([A-Za-z0-9_-]+)/i);
+    if (match && match[1]) clean = match[1];
+  }
+  clean = clean.replace(/^[#?]/, '').trim();
+
   const upper = clean.toUpperCase().replace(/\s+/g, '');
   const digits = clean.replace(/\D/g, '');
 
@@ -63,10 +125,31 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// List or query trips
+app.get('/api/trips', (req, res) => {
+  const query = (req.query.join || req.query.code || req.query.trip || req.query.tripCode || req.query.q) as string;
+  if (query) {
+    const trip = findTripByQuery(query);
+    if (trip) {
+      res.json(trip);
+      return;
+    }
+    res.status(404).json({ error: 'Trip not found or invalid code' });
+    return;
+  }
+
+  const unique = new Map<string, Trip>();
+  tripsStore.forEach(t => {
+    if (t && t.id) unique.set(t.id, t);
+  });
+  res.json(Array.from(unique.values()));
+});
+
 // Private trip access by specific ID or Invite Code
 app.get('/api/trips/:id', (req, res) => {
-  const query = req.params.id;
-  const trip = findTripByQuery(query);
+  const queryParam = (req.query.join || req.query.code || req.query.trip || req.query.tripCode) as string;
+  const param = req.params.id;
+  const trip = findTripByQuery(queryParam || param);
 
   if (!trip) {
     res.status(404).json({ error: 'Trip not found or invalid code' });
@@ -91,6 +174,7 @@ app.post('/api/trips', (req, res) => {
     const digits = tripData.inviteCode.replace(/\D/g, '');
     if (digits) tripsStore.set(digits, tripData);
   }
+  saveTripsToDisk();
 
   broadcastToRoom(tripData.id, {
     type: 'trip:updated',
@@ -115,6 +199,7 @@ app.put('/api/trips/:id', (req, res) => {
     const digits = updatedTrip.inviteCode.replace(/\D/g, '');
     if (digits) tripsStore.set(digits, updatedTrip);
   }
+  saveTripsToDisk();
 
   broadcastToRoom(tripId, {
     type: 'trip:updated',

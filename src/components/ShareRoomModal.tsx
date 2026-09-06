@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useTrip, encodeTripData } from '../context/TripContext';
+import { useTrip, encodeTripData, sanitizeTripForSharing } from '../context/TripContext';
 import {
   X,
   Share2,
@@ -28,7 +28,7 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ onClose }) => {
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
 
   const inviteCode = trip.inviteCode || 'ITALIA-2026';
-  const b64Data = encodeTripData(trip);
+  const b64Data = encodeTripData(sanitizeTripForSharing(trip));
   const shareableUrl = `${window.location.origin}${window.location.pathname}?join=${encodeURIComponent(inviteCode)}#data=${b64Data}`;
   const whatsappMessage = `¡Hola mi amor! 💖 Sumate a nuestro viaje "${trip.title}" tocando acá:\n${shareableUrl}\n\nO ingresá con el código: ${inviteCode}`;
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappMessage)}`;
