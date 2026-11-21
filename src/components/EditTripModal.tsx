@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useTrip } from '../context/TripContext';
+import { CurrencyPicker, CurrencyValue } from './CurrencyPicker';
+import { getTripCurrencies } from '../currencies';
 import { X, Edit3, Heart, Trash2 } from 'lucide-react';
 
 interface EditTripModalProps {
@@ -13,7 +15,11 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
   const [subtitle, setSubtitle] = useState(trip.subtitle);
   const [startDate, setStartDate] = useState(trip.startDate);
   const [endDate, setEndDate] = useState(trip.endDate);
-  const [currency, setCurrency] = useState(trip.currency);
+  const [currencyValue, setCurrencyValue] = useState<CurrencyValue>({
+    currency: trip.currency,
+    currencies: getTripCurrencies(trip),
+    exchangeRates: trip.exchangeRates || {},
+  });
   const [coverImage, setCoverImage] = useState(trip.coverImage);
 
   const [p1Name, setP1Name] = useState(trip.partners[0].name);
@@ -30,7 +36,7 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
       subtitle: subtitle.trim(),
       startDate,
       endDate,
-      currency,
+      ...currencyValue,
       coverImage: coverImage.trim() || trip.coverImage,
       partners: [
         {
@@ -180,24 +186,8 @@ export const EditTripModal: React.FC<EditTripModalProps> = ({ onClose }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
-                🪙 Moneda Principal del Viaje
-              </label>
-              <select
-                value={currency}
-                onChange={e => setCurrency(e.target.value)}
-                className="w-full text-xs p-3 rounded-2xl border border-[#D9D1B9] bg-white font-bold text-[#434338] focus:outline-[#5A5A40]"
-              >
-                <option value="EUR">€ EUR - Euro</option>
-                <option value="USD">$ USD - Dólar Estadounidense</option>
-                <option value="ARS">$ ARS - Peso Argentino</option>
-                <option value="MXN">$ MXN - Peso Mexicano</option>
-                <option value="COP">$ COP - Peso Colombiano</option>
-                <option value="CLP">$ CLP - Peso Chileno</option>
-                <option value="GBP">£ GBP - Libra Esterlina</option>
-                <option value="JPY">¥ JPY - Yen Japonés</option>
-              </select>
-            </div>
+<CurrencyPicker value={currencyValue} onChange={setCurrencyValue} />
+</div>
           </div>
 
           <div>

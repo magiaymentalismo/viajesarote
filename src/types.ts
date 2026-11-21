@@ -277,6 +277,10 @@ export interface Trip {
   startDate: string;
   endDate: string;
   currency: string;
+  /** Monedas activas del viaje (incluye la principal). */
+  currencies?: string[];
+  /** Unidades de cada moneda por 1 unidad de la moneda principal. */
+  exchangeRates?: Record<string, number>;
   partners: [Partner, Partner];
   currentActivePartnerId: PartnerId;
   inviteCode: string;

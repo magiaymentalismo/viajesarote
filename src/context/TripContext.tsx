@@ -106,6 +106,8 @@ export const sanitizeTripForSharing = (t: Trip): Partial<Trip> => {
     startDate: t.startDate,
     endDate: t.endDate,
     currency: t.currency,
+    currencies: t.currencies,
+    exchangeRates: t.exchangeRates,
     partners: t.partners,
     inviteCode: t.inviteCode,
     createdAt: t.createdAt,
@@ -339,6 +341,8 @@ export const ensureTripIntegrity = (t: Partial<Trip> | null | undefined): Trip =
       t.endDate ||
       new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     currency: t.currency || 'EUR',
+    currencies: t.currencies && t.currencies.length ? t.currencies : [t.currency || 'EUR'],
+    exchangeRates: t.exchangeRates || {},
     partners:
       t.partners && Array.isArray(t.partners) && t.partners.length === 2
         ? t.partners
@@ -761,6 +765,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tripData.endDate ||
         new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       currency: tripData.currency || 'EUR',
+      currencies: tripData.currencies,
+      exchangeRates: tripData.exchangeRates,
       partners: tripData.partners || [
         { id: 'p1', name: 'Viajero 1', avatarEmoji: '🧔', avatarColor: '#5A5A40' },
         { id: 'p2', name: 'Viajero 2', avatarEmoji: '🌸', avatarColor: '#D4A373' },

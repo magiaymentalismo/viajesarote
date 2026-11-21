@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTrip } from '../context/TripContext';
+import { CurrencyPicker, CurrencyValue } from './CurrencyPicker';
 import { X, Sparkles, Heart, Plane, Calendar, DollarSign, MapPin } from 'lucide-react';
 
 interface NewTripModalProps {
@@ -44,7 +45,11 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
   const [endDate, setEndDate] = useState(
     new Date(Date.now() + 86400000 * 28).toISOString().split('T')[0]
   );
-  const [currency, setCurrency] = useState('EUR');
+  const [currencyValue, setCurrencyValue] = useState<CurrencyValue>({
+    currency: 'EUR',
+    currencies: ['EUR'],
+    exchangeRates: {},
+  });
   const [coverImage, setCoverImage] = useState(PRESET_COVERS[0].url);
 
   // Partners config
@@ -62,7 +67,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
       subtitle: subtitle.trim() || 'Nuestra próxima gran aventura juntos',
       startDate,
       endDate,
-      currency,
+      ...currencyValue,
       coverImage,
       partners: [
         {
@@ -223,25 +228,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({ onClose }) => {
                 className="w-full text-xs p-2.5 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338]"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-[#434338] uppercase mb-1">
-                Moneda Principal
-              </label>
-              <select
-                value={currency}
-                onChange={e => setCurrency(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-2xl border border-[#D9D1B9] font-bold bg-white text-[#434338]"
-              >
-                <option value="EUR">€ Euro (EUR)</option>
-                <option value="USD">$ Dólar (USD)</option>
-                <option value="ARS">$ Peso Argentino (ARS)</option>
-                <option value="MXN">$ Peso Mexicano (MXN)</option>
-                <option value="COP">$ Peso Colombiano (COP)</option>
-                <option value="CLP">$ Peso Chileno (CLP)</option>
-                <option value="GBP">£ Libra (GBP)</option>
-                <option value="JPY">¥ Yen (JPY)</option>
-              </select>
-            </div>
+            <div className="col-span-full">
+<CurrencyPicker value={currencyValue} onChange={setCurrencyValue} />
+</div>
           </div>
 
           {/* Cover Preset Selection */}

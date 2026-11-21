@@ -26,6 +26,7 @@ import {
   Search,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { getTripCurrencies, toBaseCurrency, hasRate, formatMoney } from '../currencies';
 import { Expense, ExpenseCategory, ExpenseStatus, SplitType, PartnerId } from '../types';
 
 const CATEGORY_MAP: Record<ExpenseCategory, { label: string; emoji: string; color: string }> = {
@@ -97,6 +98,7 @@ export const ExpensesTab: React.FC = () => {
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
+    currency: trip.currency,
     category: 'comida' as ExpenseCategory,
     date: new Date().toISOString().split('T')[0],
     paidById: (activePartnerId || 'p1') as 'p1' | 'p2' | 'both',
@@ -130,8 +132,12 @@ export const ExpensesTab: React.FC = () => {
       otros: 0,
     };
 
+    const nativeByCurrency: Record<string, number> = {};
+
     (trip.expenses || []).forEach(exp => {
-      const amt = Number(exp.amount) || 0;
+      const nativeKey = exp.currency || trip.currency;
+      nativeByCurrency[nativeKey] = (nativeByCurrency[nativeKey] || 0) + (Number(exp.amount) || 0);
+      const amt = toBaseCurrency(Number(exp.amount) || 0, exp.currency, trip);
       totalGeneral += amt;
 
       if (exp.status === 'pagado') totalPagado += amt;
@@ -201,8 +207,9 @@ export const ExpensesTab: React.FC = () => {
       p1Balance,
       p2Balance,
       categoryBreakdown,
+      nativeByCurrency,
     };
-  }, [trip.expenses, trip.settlements]);
+  }, [trip.expenses, trip.settlements, trip.currency, trip.exchangeRates]);
 
   // Expand / Collapse Helpers
   const toggleCategory = (cat: string) => {
@@ -226,6 +233,7 @@ export const ExpensesTab: React.FC = () => {
     setFormData({
       description: '',
       amount: '',
+      currency: trip.currency,
       category: 'comida',
       date: new Date().toISOString().split('T')[0],
       paidById: activePartnerId,
@@ -243,6 +251,7 @@ export const ExpensesTab: React.FC = () => {
     setFormData({
       description: exp.description,
       amount: exp.amount.toString(),
+      currency: exp.currency || trip.currency,
       category: exp.category,
       date: exp.date,
       paidById: exp.paidById,
@@ -264,7 +273,7 @@ export const ExpensesTab: React.FC = () => {
       updateExpense(editingExpense.id, {
         description: formData.description.trim(),
         amount: amountNum,
-        currency: trip.currency,
+        currency: formData.currency,
         category: formData.category,
         date: formData.date,
         paidById: formData.paidById,
@@ -277,7 +286,7 @@ export const ExpensesTab: React.FC = () => {
       addExpense({
         description: formData.description.trim(),
         amount: amountNum,
-        currency: trip.currency,
+        currency: formData.currency,
         category: formData.category,
         date: formData.date,
         paidById: formData.paidById,
@@ -525,6 +534,41 @@ export const ExpensesTab: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {getTripCurrencies(trip).length > 1 && (
+              <div className="rounded-2xl border border-[#D9D1B9] bg-[#FAF6E9] p-3 space-y-2">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C8B79] block mb-1">
+                    Total del viaje en cada moneda
+                  </span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {getTripCurrencies(trip).map(c => {
+                      const rate = c === trip.currency ? 1 : trip.exchangeRates?.[c];
+                      return (
+                        <span key={c} className="text-sm font-serif font-bold text-[#434338]">
+                          {rate ? formatMoney(calculations.totalGeneral * rate, c) : `— ${c} (falta tipo de cambio)`}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C8B79] block mb-1">
+                    Gastado realmente en cada moneda
+                  </span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {(Object.entries(calculations.nativeByCurrency) as [string, number][]).map(([c, v]) => (
+                      <span key={c} className="text-sm font-serif font-bold text-[#5A5A40]">
+                        {formatMoney(v, c)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] text-[#8C8B79]">
+                  Saldos y reparto se calculan en {trip.currency} con el tipo de cambio del viaje.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -765,7 +809,10 @@ export const ExpensesTab: React.FC = () => {
             if (items.length === 0) return null; // hide empty categories to keep view clean
 
             const isExpanded = expandedCategories[catKey] ?? true;
-            const categoryTotal = items.reduce((sum, item) => sum + Number(item.amount), 0);
+            const categoryTotal = items.reduce(
+              (sum, item) => sum + toBaseCurrency(Number(item.amount), item.currency, trip),
+              0
+            );
 
             return (
               <div
@@ -856,11 +903,18 @@ export const ExpensesTab: React.FC = () => {
                             <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#EFEDE7]">
                               <div className="text-left sm:text-right">
                                 <div className="text-base font-serif font-bold text-[#434338]">
-                                  {Number(exp.amount).toFixed(2)} {trip.currency}
+                                  {formatMoney(Number(exp.amount), exp.currency || trip.currency)}
                                 </div>
+                                {exp.currency && exp.currency !== trip.currency && (
+                                  <div className="text-[10px] font-bold text-[#5A5A40]">
+                                    {hasRate(exp.currency, trip)
+                                      ? `≈ ${formatMoney(toBaseCurrency(Number(exp.amount), exp.currency, trip), trip.currency)}`
+                                      : `sin tipo de cambio ${exp.currency}→${trip.currency}`}
+                                  </div>
+                                )}
                                 <div className="text-[10px] text-[#8C8B79]">
                                   {exp.splitType === 'equal'
-                                    ? `${(Number(exp.amount) / 2).toFixed(2)} ${trip.currency} c/u`
+                                    ? `${formatMoney(Number(exp.amount) / 2, exp.currency || trip.currency)} c/u`
                                     : ''}
                                 </div>
                               </div>
@@ -977,11 +1031,18 @@ export const ExpensesTab: React.FC = () => {
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-[#EFEDE7]">
                     <div className="text-right">
                       <div className="text-lg sm:text-xl font-serif font-bold text-[#434338]">
-                        {Number(exp.amount).toFixed(2)} {trip.currency}
+                        {formatMoney(Number(exp.amount), exp.currency || trip.currency)}
                       </div>
+                      {exp.currency && exp.currency !== trip.currency && (
+                        <div className="text-[11px] font-bold text-[#5A5A40]">
+                          {hasRate(exp.currency, trip)
+                            ? `≈ ${formatMoney(toBaseCurrency(Number(exp.amount), exp.currency, trip), trip.currency)}`
+                            : `sin tipo de cambio ${exp.currency}→${trip.currency}`}
+                        </div>
+                      )}
                       <div className="text-[11px] text-[#8C8B79]">
                         {exp.splitType === 'equal'
-                          ? `${(Number(exp.amount) / 2).toFixed(2)} ${trip.currency} c/u`
+                          ? `${formatMoney(Number(exp.amount) / 2, exp.currency || trip.currency)} c/u`
                           : ''}
                       </div>
                     </div>
@@ -1078,7 +1139,7 @@ export const ExpensesTab: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase text-[#434338] mb-1">
-                    Monto ({trip.currency}) *
+                    Monto *
                   </label>
                   <input
                     type="number"
@@ -1091,6 +1152,25 @@ export const ExpensesTab: React.FC = () => {
                     className="w-full text-base font-serif font-bold p-3 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338] focus:outline-[#5A5A40]"
                   />
                 </div>
+
+                {getTripCurrencies(trip).length > 1 && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-[#434338] mb-1">
+                      Moneda
+                    </label>
+                    <select
+                      value={formData.currency}
+                      onChange={e => setFormData({ ...formData, currency: e.target.value })}
+                      className="w-full text-xs font-bold p-3.5 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338] focus:outline-[#5A5A40]"
+                    >
+                      {Array.from(new Set([...getTripCurrencies(trip), formData.currency])).map(c => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-[#434338] mb-1">

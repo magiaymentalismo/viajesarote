@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTrip, parseJoinInput } from '../context/TripContext';
+import { CurrencyPicker, CurrencyValue } from './CurrencyPicker';
 import {
   Heart,
   Compass,
@@ -60,7 +61,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
   const [endDate, setEndDate] = useState(
     new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
-  const [currency, setCurrency] = useState('EUR');
+  const [currencyValue, setCurrencyValue] = useState<CurrencyValue>({
+    currency: 'EUR',
+    currencies: ['EUR'],
+    exchangeRates: {},
+  });
   const [coverImage, setCoverImage] = useState(COVER_PRESETS[0].url);
 
   // Join state
@@ -116,7 +121,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
       subtitle: subtitle.trim() || 'Nuestra aventura inolvidable',
       startDate,
       endDate,
-      currency,
+      ...currencyValue,
       coverImage,
       partners: [
         {
@@ -427,24 +432,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTripReady }) => 
                   className="w-full text-xs p-2 rounded-2xl border border-[#D9D1B9] bg-white text-[#434338]"
                 />
               </div>
-              <div>
-                <label className="block text-[11px] font-bold text-[#434338] uppercase mb-1">
-                  Moneda
-                </label>
-                <select
-                  value={currency}
-                  onChange={e => setCurrency(e.target.value)}
-                  className="w-full text-xs p-2 rounded-2xl border border-[#D9D1B9] bg-white font-bold text-[#434338]"
-                >
-                  <option value="EUR">€ EUR</option>
-                  <option value="USD">$ USD</option>
-                  <option value="ARS">$ ARS</option>
-                  <option value="MXN">$ MXN</option>
-                  <option value="COP">$ COP</option>
-                  <option value="CLP">$ CLP</option>
-                  <option value="GBP">£ GBP</option>
-                </select>
-              </div>
+              <div className="col-span-full">
+<CurrencyPicker value={currencyValue} onChange={setCurrencyValue} />
+</div>
             </div>
 
             {/* Cover Presets */}
