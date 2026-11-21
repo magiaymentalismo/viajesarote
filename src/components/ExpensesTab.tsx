@@ -26,6 +26,7 @@ import {
   Search,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { CurrencyPicker, CurrencyValue } from './CurrencyPicker';
 import { getTripCurrencies, toBaseCurrency, hasRate, formatMoney } from '../currencies';
 import { Expense, ExpenseCategory, ExpenseStatus, SplitType, PartnerId } from '../types';
 
@@ -59,7 +60,7 @@ const STATUS_MAP: Record<ExpenseStatus, { label: string; icon: React.ReactNode; 
 };
 
 export const ExpensesTab: React.FC = () => {
-  const { trip, activePartnerId, addExpense, updateExpense, deleteExpense, addSettlement } = useTrip();
+  const { trip, activePartnerId, addExpense, updateExpense, deleteExpense, addSettlement, updateTripInfo } = useTrip();
 
   const p1 = trip.partners[0];
   const p2 = trip.partners[1];
@@ -92,6 +93,12 @@ export const ExpensesTab: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPayer, setFilterPayer] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+  const [currencyDraft, setCurrencyDraft] = useState<CurrencyValue>({
+    currency: trip.currency,
+    currencies: getTripCurrencies(trip),
+    exchangeRates: trip.exchangeRates || {},
+  });
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   // Form State
@@ -696,7 +703,21 @@ export const ExpensesTab: React.FC = () => {
             </button>
           </div>
 
-          {/* Right: Add Expense Trigger */}
+          {/* Right: Currencies + Add Expense Trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setCurrencyDraft({
+                currency: trip.currency,
+                currencies: getTripCurrencies(trip),
+                exchangeRates: trip.exchangeRates || {},
+              });
+              setIsCurrencyOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-[#D9D1B9] text-[#434338] text-xs font-bold hover:bg-[#F5F2ED] transition-all cursor-pointer shrink-0"
+          >
+            🪙 Monedas ({getTripCurrencies(trip).join(' · ')})
+          </button>
           <button
             id="btn-add-expense"
             onClick={handleOpenAddModal}
@@ -1093,6 +1114,35 @@ export const ExpensesTab: React.FC = () => {
       )}
 
       {/* MODAL: ADD / EDIT EXPENSE */}
+      {isCurrencyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/65 backdrop-blur-xs">
+          <div className="bg-[#FBF9F5] rounded-[28px] shadow-2xl border border-[#D9D1B9] max-w-lg w-full p-5 max-h-[88vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#EFEDE7]">
+              <h3 className="font-serif font-bold text-[#434338]">Monedas del viaje</h3>
+              <button type="button" onClick={() => setIsCurrencyOpen(false)} className="p-1.5 rounded-full hover:bg-[#EFEDE7]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <CurrencyPicker value={currencyDraft} onChange={setCurrencyDraft} />
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-[#EFEDE7]">
+              <button type="button" onClick={() => setIsCurrencyOpen(false)} className="px-4 py-2 rounded-2xl text-xs font-bold text-[#737260]">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateTripInfo(currencyDraft);
+                  setIsCurrencyOpen(false);
+                }}
+                className="px-5 py-2 rounded-2xl bg-[#5A5A40] text-white text-xs font-bold"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
           <div
